@@ -1,0 +1,24 @@
+{
+  "id": "the-sims-legacy-collection",
+  "title": "The Sims Legacy Collection",
+  "steam_appid": 3314060,
+  "status": "verified-local",
+  "renderer": "dxvk",
+  "nativeVulkan": true,
+  "provenance": "verified locally on Apple Silicon (M1 Pro), engine x64-sikarugir10.0_6-r2, macOS 26.6.2, KLYC-Box 0.9.3 mattpilott (upstream#160, 2026-09-20): rated 4, playable with minor issues, Apple M4, macOS 27.0, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.32, DXVK, 54 minutes played through KLYC-Box with the recipe (MVK_SHADOW_IMPORT=1 in the environment); the minor issues were not described. kasettakorn (upstream#174, 2026-09-21): rated 3, playable with workarounds, Apple M4 Pro, macOS 26.5.2, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.32, DXMT, 6 minutes, 'when I have already built house completely, neighbourhood map, character icon and thumbnail missing', with a screenshot.",
+  "notes": "Re-verified on engine r2 on 2026-09-10: launches from Steam and reaches the neighbourhood view at 99.3 fps, 1728x1117, 2.8 ms of GPU per frame, presenting directly rather than through the compositor. No MoltenVK device losses in the run, so the shadow-import fix is holding. EA's 2025 re-release draws with Vulkan rather than Direct3D, so the renderer setting has no effect on it; the bottle's renderer is irrelevant (dxvk here). It needs engine x64-sikarugir10.0_6-r1 or newer plus the Sims recipe, which sets MVK_SHADOW_IMPORT=1. On older engines the window opens black with the game running behind it: the game is 32-bit, Wine imports its own host memory into MoltenVK, and Metal loses the device on the first frame (kIOGPUCommandBufferCallbackErrorOutOfMemory, six times, then nothing). With the patched engine it plays: neighbourhood and lot load, Sims take orders, 65 fps at 1728x1117. Reported black-screen elsewhere on M4 and M5 machines (klyc-db issue #7, KhronosGroup/MoltenVK#2766); the fix is not chip-specific. Run again on an M4 on 2026-10-03 (macOS 27.0, engine r19): with the recipe's variable in the process the neighbourhood and a lot draw correctly; without it the window is black and MoltenVK loses the device at the first frame, as the older-engine note above says.",
+  "lastVerified": "2026-09-10",
+  "verified": {
+    "chip": "Apple M1 Pro",
+    "macos": "26.6.2",
+    "engine": "x64-sikarugir10.0_6-r2",
+    "fps": "99.3 in the neighbourhood view at 1728x1117 on DXVK with 2.8 ms of GPU per frame (2026-09-10, engine r2)"
+  },
+  "knownIssues": [
+    {
+      "symptom": "Sims drawn as black silhouettes on the lot, and in the neighbourhood view the family portrait is coloured noise and the lot preview a black block",
+      "cause": "reported by two people, both on an M4 (M4 with macOS 27 and DXVK, M4 Pro with macOS 26.5.2 and DXMT), so it is not tied to one graphics mode. Not reproduced here on an M1 Pro, where the neighbourhood and an empty lot drew correctly at the default resolution on 2026-09-21; the two reporters describe it differently, one saying it shows at a high in-game resolution (2880x1620) once a house is built, the other that it shows from the start and survives a restart of the game. The pattern, small textures arriving as uninitialised memory, points at the host-memory import path this 32-bit Vulkan game needs (MVK_SHADOW_IMPORT=1). Checked on an M4 here on 2026-10-03 (macOS 27.0, engine x64-sikarugir10.0_6-r19, the recipe's MVK_SHADOW_IMPORT=1 confirmed in the process): the neighbourhood map, the Goth lot with its walls, floors and pool, and Buy mode all drew correctly, with no MoltenVK error over ten minutes. The sims themselves and a lot's family portrait were not reached in that scripted run, so the reported part is still neither reproduced nor ruled out on an M4.",
+      "fix": "None yet. The game plays through it; tracked from upstream#160."
+    }
+  ]
+}

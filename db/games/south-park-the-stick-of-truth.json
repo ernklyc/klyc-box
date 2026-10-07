@@ -1,0 +1,13 @@
+{
+  "id": "south-park-the-stick-of-truth",
+  "title": "South Park: The Stick of Truth",
+  "steam_appid": 213670,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by brabecmatyas (upstream#263, 2026-09-30), Apple M1 Pro, macOS 27.0.1, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, recipe steam, rated 4 of 5 after 126 minutes. The minor issues were not described. Not verified by the maintainer.",
+  "notes": "Reported playable on DXMT on an M1 Pro with the default engine r11 over a 126 minute session. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

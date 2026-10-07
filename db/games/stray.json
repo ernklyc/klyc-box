@@ -1,0 +1,15 @@
+{
+  "id": "stray",
+  "title": "Stray",
+  "steam_appid": 1332010,
+  "status": "community",
+  "renderer": "dxmt",
+  "provenance": "community consensus (AppleGamingWiki / r-macgaming / MacPlay), unverified by KLYC-Box",
+  "notes": "works",
+  "lastVerified": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam",
+    "note": "Native Apple Silicon build, macOS 13 or later."
+  }
+}

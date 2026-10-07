@@ -1,0 +1,25 @@
+name: CI
+
+# Her push ve çekme isteğinde derle, test et, Türkçe çeviri eksiklerini denetle.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - run: python3 Scripts/check-l10n.py
+      - run: swift build
+      - run: swift test

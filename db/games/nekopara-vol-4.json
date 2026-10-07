@@ -1,0 +1,33 @@
+{
+  "id": "nekopara-vol-4",
+  "title": "NEKOPARA Vol. 4",
+  "steam_appid": 1406990,
+  "status": "community",
+  "renderer": "wined3d",
+  "anticheat": null,
+  "provenance": "Reported by FloraKira (upstream#232, 2026-09-27), Apple M5 Pro, macOS 27.0, KLYC-Box 0.9.35, engine x64-sikarugir10.0_6-r7, Wine's own Direct3D, Windows 11, AVX advertised, DLL overrides winhttp=n,b;emotedriver=n,b, rated 4 of 5 after 27 minutes. Not verified by the maintainer.",
+  "notes": "Visual novel with E-mote animated characters. Reported playable on Wine's own Direct3D: in the other modes it dropped frames the whole time, on Wine's Direct3D only while an animated (Live2D style) scene plays. The reporter's environment carried the DLL overrides winhttp=n,b and emotedriver=n,b, which were not tested apart. Nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "Frame drops throughout on DXMT and DXVK, and during animated character scenes on Wine's own Direct3D (reported on an M5 Pro, engine r7).",
+      "cause": "not measured.",
+      "fix": "use Wine's own Direct3D, the mode the reporter settled on."
+    }
+  ],
+  "rendererResults": {
+    "wined3d": {
+      "verdict": "works",
+      "detail": "playable, frame drops only in animated scenes (reported, M5 Pro)"
+    },
+    "dxmt": {
+      "verdict": "partial",
+      "detail": "frame drops the whole time (reported)"
+    },
+    "dxvk": {
+      "verdict": "partial",
+      "detail": "frame drops the whole time (reported)"
+    }
+  },
+  "launchArgs": null,
+  "lastVerified": null
+}

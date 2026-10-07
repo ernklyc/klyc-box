@@ -1,0 +1,10 @@
+{
+  "id": "ori-and-the-will-of-the-wisps",
+  "title": "Ori and the Will of the Wisps",
+  "steam_appid": 1057090,
+  "status": "reported-upstream",
+  "renderer": "dxmt",
+  "provenance": "Named in the DXMT changelog v0.73 (github.com/3Shain/dxmt/releases), and since reported by a player: 3zoozbash (upstream#274, 2026-10-02), Apple M5, macOS 27.2 as entered, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, rated 5 of 5 after 51 minutes, in an environment with sync off (WINEESYNC=0, WINEMSYNC=0), scale 144 dpi, the Metal HUD on, a 120 fps cap and DXMT_ALLOW_CROSS_PROCESS_SWAPCHAIN=1, recipes ea-app, steam, vcrun2022. Not run here.",
+  "notes": "missing character fixed (the changelog's words). One player report on an M5 rates it perfect over 51 minutes on DXMT on the default engine, in an environment with every sync primitive turned off and a 120 fps cap; none of those settings is known to be needed. No frame rate was given and nothing was measured here.",
+  "lastVerified": null
+}

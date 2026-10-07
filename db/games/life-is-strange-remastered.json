@@ -1,0 +1,13 @@
+{
+  "id": "life-is-strange-remastered",
+  "title": "Life is Strange Remastered",
+  "steam_appid": 1265920,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "anticheat": null,
+  "provenance": "Reported by cometmcisaac (upstream#246, 2026-09-28), Apple M1 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r12 (the GPTK 4 line), D3DMetal, Windows 11, AVX advertised, frame cap 120, D3DM_ENABLE_METALFX=1 and D3DM_MTL4=1, recipe controller-sdl, rated 5 of 5 after 2 minutes. Not verified by the maintainer.",
+  "notes": "Reported perfect on D3DMetal with the GPTK 4 engine, which needs macOS 27, after a two-minute session. The reporter turned on Metal 4 (D3DM_MTL4=1) and MetalFX (D3DM_ENABLE_METALFX=1). That engine leaves Metal 4 off by default because it quietly kills some Unreal Engine 5 games, so this run is on the reporter's settings, not the defaults. The default engine was not tried. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

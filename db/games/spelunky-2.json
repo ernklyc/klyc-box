@@ -1,0 +1,13 @@
+{
+  "id": "spelunky-2",
+  "title": "Spelunky 2",
+  "steam_appid": 418530,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "anticheat": null,
+  "provenance": "Reported by thaedal (upstream#298, 2026-10-03), Apple M4 Pro, macOS 27.0.1, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, D3DMetal as the environment's mode (the renderer field left at none), recipes steam and vcrun2022, rated 5 of 5 after 50 minutes. Not verified by the maintainer.",
+  "notes": "Direct3D 11 (its store page asks for feature level 11.0). Reported perfect after 50 minutes on D3DMetal on the default engine r17 on an M4 Pro. DXMT, the default mode and the usual one for a Direct3D 11 game, was not reported on, so the mode here is the one that worked rather than a comparison. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

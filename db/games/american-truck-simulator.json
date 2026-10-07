@@ -1,0 +1,33 @@
+{
+  "id": "american-truck-simulator",
+  "title": "American Truck Simulator",
+  "steam_appid": 270880,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by glkmag (upstream#233, 2026-09-27), Apple M4, macOS 27.0, KLYC-Box 0.9.35, engine x64-crossover26.3-r4 (an early Wine 11 engine), DXMT, rated 4 of 5 after 7 minutes, said to run almost as well as on CrossOver. Not verified by the maintainer. Second report by nik-19201 (upstream#288, 2026-10-03), Apple M1, macOS 27.0.1: does not start on the Wine 11 engine r15, runs perfectly on r16 with the 0.10.4 beta, maps loading faster than on the default engine, which they found slower with mouse and camera delays.",
+  "notes": "Reported playable on DXMT on the Wine 11 engine r4. Two issues reported: Quit Game freezes the screen and the game has to be closed from KLYC-Box, and a custom ESP32 Bluetooth controller is not recognised. Nothing was measured here. The game has a native Mac version on Steam as well. A second reporter (upstream#288, 2026-10-03, Apple M1, macOS 27.0.1, KLYC-Box 0.10.3) has it and Euro Truck Simulator 2 fail to start on the Wine 11 engine r15 in DXMT mode while the default engine starts both on the same Mac, see the known issue. The same reporter then confirmed both run on the Wine 11 engine r16 from the 0.10.4 beta, with faster map loading than the default engine.",
+  "knownIssues": [
+    {
+      "symptom": "Quit Game freezes the screen instead of exiting (reported on an M4, DXMT, engine x64-crossover26.3-r4).",
+      "cause": "not measured.",
+      "fix": "close the game from KLYC-Box. Not yet tried on the current engines."
+    },
+    {
+      "symptom": "A custom ESP32 Bluetooth game controller is not recognised (reported on an M4).",
+      "cause": "not measured. A controller Wine's raw HID path does not map is the case the SDL driver handles.",
+      "fix": "worth trying the dependency \"Controllers through SDL\" (recipe controller-sdl), then restart the environment. Not verified for this controller."
+    },
+    {
+      "symptom": "On the Wine 11 engine r15 in DXMT mode the game does not start, Euro Truck Simulator 2 the same, while the default engine starts both on the same Mac (reported on an M1, macOS 27.0.1, KLYC-Box 0.10.3, upstream#288).",
+      "cause": "The DXMT build the Wine 11 engine carried from r11 to r15 built its clear pipelines before the Metal device they read was set up and could crash at start-up. The default engine lost it in 0.10.1 and the Wine 11 engine in r16. Confirmed by the reporter's r16 run rather than measured here.",
+      "fix": "Confirmed fixed by the same reporter on the Wine 11 engine r16 (KLYC-Box 0.10.4 beta, 2026-10-03): both games start, and the maps load faster there than on the default engine. Pick r16 on the game's Full page under Advanced, Engine."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  }
+}

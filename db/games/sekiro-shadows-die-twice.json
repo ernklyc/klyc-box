@@ -1,0 +1,13 @@
+{
+  "id": "sekiro-shadows-die-twice",
+  "title": "Sekiro: Shadows Die Twice",
+  "steam_appid": 814380,
+  "status": "reported-upstream",
+  "renderer": "dxmt",
+  "provenance": "Named as working in the DXMT changelog (github.com/3Shain/dxmt/releases), and since reported by a player: MTNK03 (upstream#182, 2026-09-22), Apple M2 Pro with 16 GB, macOS 26.6.2, engine x64-sikarugir10.0_6-r5, DXMT, rated 5 of 5. Not run here.",
+  "notes": "Widely reported working through DXMT. One player report on an M2 Pro with 16 GB on the r5 engine rates it perfect. No session length or frame rate was given, and nothing has been measured here.",
+  "lastVerified": null,
+  "anticheat": null,
+  "knownIssues": [],
+  "launchArgs": null
+}

@@ -1,0 +1,14 @@
+{
+  "id": "ultrakill",
+  "title": "ULTRAKILL",
+  "steam_appid": 1229490,
+  "status": "community",
+  "renderer": "dxvk",
+  "anticheat": null,
+  "provenance": "Reported by temka0217 (upstream#310, 2026-10-04, the form's game field says Steam, the title and app id say ULTRAKILL), Apple M2, macOS 26.6.2, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXVK, AVX advertised, rated 5 of 5 after 10 minutes, recipes steam, vcrun2022 and counter-strike-2 in the bottle. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXVK on the default engine r11 on an M2 after a short session of ten minutes, with nothing named as off. The bottle had been set up for Counter-Strike 2, whose recipe writes a dxvk.conf section for csgo.exe alone, so none of it reaches this game. No report has tried DXMT on it yet. Early Access, Windows only on Steam. The anti-cheat map has no entry for it. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null,
+  "verified": null
+}

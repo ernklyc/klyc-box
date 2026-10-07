@@ -1,0 +1,30 @@
+{
+  "id": "umamusume-pretty-derby",
+  "title": "Umamusume: Pretty Derby",
+  "steam_appid": 3224770,
+  "status": "reported-upstream",
+  "renderer": "dxmt",
+  "provenance": "DXMT changelog v0.73 (github.com/3Shain/dxmt/releases)",
+  "notes": "login background video fixed. The dead left click reported on an M5 came after opening the terms links, a switch to the browser and back, and is the focus fault fixed in engine r15. Measured here 2026-09-19 on an M1 Pro, macOS 27.0, engine r5, KLYC-Box 0.9.32: the title screen and the in-game menu react to a left click on DXMT and on DXVK alike (tap to start proceeds to the data download), so the dead left click reported on an M5 is not a macOS 27 or a graphics-mode matter on this hardware. Measured on an M4 with macOS 27.0 on 2026-09-30, DXMT: after a Dock restore, Cmd+Tab or a click on another app the game took no input on engine r13 and takes it on r15.",
+  "lastVerified": "2026-09-30",
+  "anticheat": {
+    "names": [
+      "CrackProof"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  },
+  "knownIssues": [
+    {
+      "symptom": "The game stops taking left clicks after switching to another app and back, for example after opening the terms links in the browser (reported on an M5, macOS 27.0, DXMT), while clicks keep working in the Steam window",
+      "cause": "Wine 10's Mac driver sent the game a made-up click in its title bar whenever macOS gave it focus back, and Unity ignores the focus gain that follows such a click, so it keeps drawing but drops every click and key (Wine bug 48121, upstream#182). Measured on an M4 with macOS 27.0: after a Dock restore, Cmd+Tab and a click on another app the game took no input on engine r13 and takes it on r15",
+      "fix": "Fixed in engine r15, which environments on the default engine pick up by themselves once Steam is closed. On an older engine, restart the game."
+    }
+  ],
+  "verified": {
+    "engine": "x64-sikarugir10.0_6-r5",
+    "macos": "27.0",
+    "chip": "Apple M1 Pro",
+    "result": "Title screen renders and reacts to a left click on DXMT and on DXVK (tap to start, menu button); the data download then starts. Gameplay not exercised."
+  }
+}

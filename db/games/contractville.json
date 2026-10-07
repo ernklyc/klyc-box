@@ -1,0 +1,55 @@
+{
+  "id": "contractville",
+  "title": "ContractVille",
+  "steam_appid": 2698780,
+  "status": "verified-local",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by ObT1337 (upstream#202, 2026-09-25), Apple M1, macOS 15.6.1, KLYC-Box 0.9.35, engine x64-sikarugir10.0_6-r7, DXVK: the logos play, then a black screen, later confirmed on an M2 with the full game. Verified by the maintainer on 2026-09-26 on an M1 Pro, macOS 27.0: the same install loads and reaches the character creator on the Wine 11 engines r11 (seen on screen, DXVK and DXMT) and r12 (process profile, DXMT), and never leaves its loading screen on the Wine 10 engine r7.",
+  "notes": "Unreal Engine 4.27. Needs the Wine 11 engine (x64-crossover26.3-r12, the recipe names it) and DXMT. On the default Wine 10 engine the game sits on its loading screen forever after the logos, game running, nothing loading, Epic's SDK idle, on DXVK and with or without Media Foundation, measured for 20 minutes on an M1 Pro. On the Wine 11 tree the same install plays its intros, shows a loading screen with a progress bar and reaches the character creator in about five minutes. DXMT draws it fully. DXVK on Wine 11 gets there too but draws the character preview black. DXMT on the Wine 10 engine crashes at start (D3D11 CreateTexture2D with the shared flag returns E_FAIL on DXMT 0.80). Gameplay past the character creator was not exercised and no frame rate was read. Why the Wine 10 tree stalls is open. The reporter, playing on r11 with DXMT, sees the in-game tutorial videos as a blank white screen.",
+  "knownIssues": [
+    {
+      "symptom": "Endless loading screen after the logos on the default engine (reported on an M1 and an M2, reproduced on an M1 Pro, engine r7).",
+      "cause": "the Wine 10 tree. The game's startup stops before its Epic login and nothing loads. Not the videos, not the renderer. The same install loads on the Wine 11 tree.",
+      "fix": "move the environment to the Wine 11 engine (Settings, Environments, the environment's page, Advanced, engine Wine 11.0 (CrossOver 26.3) r12) and set the environment's mode to DXMT, also because Steam's window draws black in DXVK mode on that engine. The recipe names both, so a KLYC-Box with it offers the engine on Play."
+    },
+    {
+      "symptom": "Character preview drawn black in the character creator on DXVK (Wine 11, M1 Pro).",
+      "cause": "not measured, DXVK on MoltenVK with this game's preview render target.",
+      "fix": "use DXMT, which draws it."
+    },
+    {
+      "symptom": "Crashes at start on DXMT with the Unreal crash reporter on the Wine 10 engine (M1 Pro, engine r7, DXMT 0.80).",
+      "cause": "measured: the game creates a shared D3D11 render target (MISC_SHARED, R16G16B16A16_FLOAT). DXMT needs Wine's D3DKMT device to register a shared allocation, and on the Wine 10 tree DXMT's adapter lookup by LUID fails, so there was no device and creation returned E_FAIL, which Unreal treats as fatal.",
+      "fix": "fixed on the default engine from revision r13 (KLYC-Box 0.10 beta): its DXMT creates that texture as a private one instead of failing. Earlier revisions crash; the Wine 11 engine always accepted it."
+    },
+    {
+      "symptom": "In-game tutorial videos show a blank white screen instead of playing (reported on the Wine 11 engine r11, DXMT, M1, upstream#202).",
+      "cause": "not measured. The game plays them through Windows Media Foundation, which Wine serves with its own media layer, and these are 4K H.264 files. The startup logos, the same kind of file, do play.",
+      "fix": "none known. The game itself plays on, the tutorials are the only videos affected so far."
+    },
+    {
+      "symptom": "Steam's own window shows only its frame, the page area black, after moving the environment to the Wine 11 engine (reported on an M1, r11, reproduced on an M1 Pro, r12).",
+      "cause": "measured: on the Wine 11 engines Steam's browser draws black in the DXVK mode and fine in the DXMT mode. Being looked at.",
+      "fix": "set the environment's mode to DXMT on the Wine 11 engine, which is the mode this game wants anyway."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": "2026-09-26",
+  "rendererResults": {
+    "dxmt": {
+      "verdict": "works",
+      "detail": "on the Wine 11 engines r11 and r12: character creator with the 3D scene (M1 Pro, 2026-09-26). On the Wine 10 engine: crash at start up to r11, starts from r13 and then meets that tree's loading-screen stall"
+    },
+    "dxvk": {
+      "verdict": "partial",
+      "detail": "on Wine 11 r11 the game loads and the creator works but the character preview is black. On the Wine 10 engine r7 the loading screen never ends"
+    }
+  },
+  "verified": {
+    "chip": "Apple M1 Pro",
+    "macos": "27.0",
+    "engine": "x64-crossover26.3-r12",
+    "fps": "not measured"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "metaphor-refantazio",
+  "kind": "game",
+  "title": "Metaphor: ReFantazio",
+  "requires": [
+    "steam"
+  ],
+  "renderer": "dxmt",
+  "steps": [
+    {
+      "type": "note",
+      "text": "Needs engine x64-crossover26.3-r8 or later: it keeps the game's current-fiber pointer and macOS's per-thread QoS class from sharing one slot, which is why the Wine 10 engine crashed at the first fiber switch and the Wine 11 engines r5 to r7 opened a black window and hung. Measured with the free Prologue Demo on 2026-09-12. No setting, graphics mode or AVX switch replaces the engine."
+    },
+    {
+      "type": "note",
+      "text": "DirectX 11, so DXMT. 55 to 59 fps on an M1 Pro at 1728x1117 in the prologue desert. CrossOver users report the sound cutting out and an audio fix; not seen here in 35 minutes."
+    },
+    {
+      "type": "note",
+      "text": "Keyboard: Return confirms, Escape opens the pause menu with Skip for cutscenes, F fast-forwards dialogue. The Yes/No prompts default to No, so press Up before Return."
+    }
+  ],
+  "knownIssues": [
+    {
+      "symptom": "Engines before r8: page fault reading 0x20FF seconds after launch (Wine 10, r0 to r2), or a black window and a hang at full CPU (Wine 11, r5 to r7)",
+      "cause": "measured: the game's fiber pointer and macOS's per-thread QoS class share one slot in the thread block; the earlier engines gave the slot to one side only",
+      "fix": "engine x64-crossover26.3-r8 or later; no setting changes it"
+    }
+  ],
+  "lastVerified": {
+    "date": "2026-09-12",
+    "engine": "x64-crossover26.3-r8",
+    "macos": "26.6.2",
+    "chip": "Apple M1 Pro",
+    "result": "dxmt: the free Prologue Demo through the opening cutscenes, title menu, New Game, naming and difficulty prompts, first dialogue and the run through the Tradia Desert, 55 to 59 fps at 1728x1117 on an M1 Pro, no fault in 35 minutes. First battle not reached. Full game with Denuvo not run here."
+  },
+  "engine": "x64-crossover26.3-r8"
+}

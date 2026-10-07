@@ -1,0 +1,42 @@
+{
+  "id": "csgo-legacy",
+  "title": "Counter-Strike: Global Offensive (Legacy)",
+  "steam_appid": 4465480,
+  "status": "verified-local",
+  "renderer": "dxmt",
+  "provenance": "played here on the free standalone app, M1 Pro, macOS 26.6.2, engine x64-crossover26.3-r7, 2026-09-11",
+  "notes": "Plays on macOS 26 with engine x64-crossover26.3-r7 or later and the csgo-legacy recipe: the game alone gets the engine's wined3d Direct3D 9 (a native d3d9.dll in its bin folder, taken first for csgo.exe) and an NVIDIA identity; r7 carries the 32-bit NVAPI stub the game then needs. The environment stays on DXMT, so Steam and every other game are untouched. 17 fps at 1728x1117 with the defaults on an M1 Pro, so lower the resolution or the settings. Why this route: on DXVK's Direct3D 9 the map load on macOS 26 either loses the GPU device on Source's HDR pass or never finishes after the console reaches INGAME, and on the Wine 10 engine it freezes in a lost wake-up; wined3d (CodeWeavers' Direct3D 9 on OpenGL, the route CrossOver users take) has none of those, and it fails Source's shadow-map check only with an AMD identity. History: NVAPI 0xFFFFFFFE with any non-AMD identity was a dead end while the stub was placed beside the game; NVIDIA's SDK loads nvapi.dll from the system directory only. After moving a bottle to r7, Repair it once so the stub's placeholder is written. On macOS 14 and 15 the game also runs on DXVK's Direct3D 9 (verified 2026-09-02 on the Wine 10 engine). Cold check 2026-09-11 on KLYC-Box 0.9.7 (M1 Pro, macOS 26.6.2, engine r7): the game deleted and downloaded again by Steam launched from Play, which put the d3d9.dll back and started it on wined3d with the NVAPI stub loaded; it held its 1728x1117 window for three minutes. No round played in that check.",
+  "lastVerified": "2026-09-11",
+  "anticheat": {
+    "names": [
+      "VAC"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; the legacy app is delisted from matchmaking, offline/community play only"
+  },
+  "rendererResults": {
+    "wined3d": {
+      "verdict": "fails",
+      "detail": "unfixable gate pair, verified 2026-09-01: with an AMD GPU identity the game blocks on missing shadow-depth formats ('graphics hardware does not support all features (CSM)', PCF 0); with any non-AMD identity (Intel 8086:3e9b or Wine's NVIDIA default) it blocks on 'Failed to initialize NVAPI (0xFFFFFFFE)'. -dxlevel 90 does not bypass the CSM check."
+    }
+  },
+  "knownIssues": [
+    {
+      "symptom": "On DXVK's Direct3D 9 (the default graphics mode) on macOS 26: the map load stops at 'Initializing game data', or the screen goes black at the end of the load.",
+      "cause": "MoltenVK loses the device on Source's zero-attachment HDR pass, and a second stall after INGAME that is not explained.",
+      "fix": "The csgo-legacy recipe on engine r7 or later: wined3d plus an NVIDIA identity for csgo.exe."
+    },
+    {
+      "symptom": "On the Wine 10 engine (macOS 26): freezes at 'Initializing game data' with the process idle.",
+      "cause": "A lost wake-up in Source's job hand-off, a scheduling-order race macOS 26 exposes (wineserver trace, 2026-09-02).",
+      "fix": "Use engine r7 and the recipe."
+    }
+  ],
+  "verified": {
+    "chip": "M1 Pro",
+    "macos": "26.6.2",
+    "engine": "x64-crossover26.3-r7",
+    "fps": "17 at 1728x1117 windowed with the game's defaults; 30 to 62 at 1280x800 windowed by scene (60 at spawn, 30 in the open with bots fighting), 2026-09-11 on 0.9.7, cl_showfps",
+    "how": "Dust II with bots through Steam (-applaunch 4465480 +map de_dust2): main menu, map load, spawn, a round played with movement and damage. Twice from a clean state, the second time through the csgo-legacy recipe on a freshly installed r7."
+  }
+}

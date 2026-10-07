@@ -1,0 +1,24 @@
+{
+  "id": "kingdom-new-lands",
+  "title": "Kingdom: New Lands",
+  "steam_appid": 496300,
+  "epic_app_name": "cacao",
+  "status": "community",
+  "renderer": "dxvk",
+  "anticheat": null,
+  "provenance": "Reported by Jester1397 (upstream#212, 2026-09-26), Apple M3, macOS 27.0, KLYC-Box 0.9.35, engine x64-sikarugir10.0_6-r7, DXVK, the Epic Games version, about two hours through the first two islands. Not verified by the maintainer.",
+  "notes": "Unity. Reported playable on DXVK from the Epic Games version, two islands in about two hours, with occasional freezes and slightly laggy sound. Nothing was measured here. The game has a native Mac version on Steam as well.",
+  "knownIssues": [
+    {
+      "symptom": "Occasional freezes during play and slightly laggy sound (reported on an M3, DXVK, engine r7).",
+      "cause": "not measured.",
+      "fix": "none known, the reporter played through them."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  }
+}

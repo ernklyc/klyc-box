@@ -1,0 +1,506 @@
+import Darwin
+import Foundation
+
+/// GitHub repo that receives community compatibility reports (owner/name).
+public let reportRepo = "ernklyc/klyc-box"
+
+/// Filesystem layout for everything Gin owns. Mirrors the spike layout under
+/// `~/Library/Application Support/Gin`, overridable with `KLYC_HOME` for tests.
+public struct KLYCPaths: Sendable {
+    public let home: URL
+    /// A location the user chose that is not there right now (its drive unplugged, #24): the app
+    /// runs on the default home for the moment, says so, and never treats it as a first run.
+    public let unavailableConfiguredHome: URL?
+
+    /// `~/Library/Application Support/KLYC-Box`, the home unless one is chosen.
+    public static var defaultHome: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "KLYC-Box", directoryHint: .isDirectory)
+    }
+    /// The pointer to a chosen location, at the fixed default home so the app and the CLI read the
+    /// same one (UserDefaults is per bundle). `{"home": "/Volumes/Games/KLYC-Box"}`.
+    public static var configFile: URL { defaultHome.appending(path: "config.json") }
+
+    public init(home: URL? = nil) {
+        let env = ProcessInfo.processInfo.environment["KLYC_HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let chosen = Self.configuredHome()
+        let r = Self.resolve(explicit: home, env: env, configured: chosen,
+                             reachable: chosen.map { FileManager.default.fileExists(atPath: $0.path) } ?? false,
+                             defaultHome: Self.defaultHome)
+        self.home = r.home; self.unavailableConfiguredHome = r.unavailable
+    }
+
+    /// Precedence, most explicit first: the caller's, `KLYC_HOME`, the chosen location when its
+    /// folder is there, else the default (with the chosen one reported as unavailable).
+    public static func resolve(explicit: URL?, env: URL?, configured: URL?, reachable: Bool, defaultHome: URL) -> (home: URL, unavailable: URL?) {
+        if let explicit { return (explicit, nil) }
+        if let env { return (env, nil) }
+        if let configured { return reachable ? (configured, nil) : (defaultHome, configured) }
+        return (defaultHome, nil)
+    }
+
+    public static func configuredHome(from file: URL = configFile) -> URL? {
+        guard let data = try? Data(contentsOf: file),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let path = obj["home"] as? String, !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    /// Records a chosen location, or with nil goes back to the default.
+    public static func setConfiguredHome(_ url: URL?, file: URL = configFile) throws {
+        if let url {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: ["home": url.standardizedFileURL.path], options: [.prettyPrinted])
+            try data.write(to: file, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: file)
+        }
+    }
+
+    /// Why a folder cannot hold KLYC-Box's data, or nil when it can. The folder must exist and be
+    /// writable, must not sit inside the default home (which would move the data into itself), and
+    /// the volume must do the two things Wine needs: symbolic links, for an environment's drive
+    /// letters, and an execute bit that survives, because the engine's own binaries run from here.
+    ///
+    /// Those last two are probed rather than inferred. The previous check read
+    /// `volumeSupportsSymbolicLinks` and refused exFAT by name, but macOS reports exFAT as
+    /// supporting symbolic links and does in fact create them, so the check never fired and the
+    /// refusal the release notes promised never happened. Measured 2026-09-09 on an exFAT volume:
+    /// the flag reads true, links are created, and a bottle moved there launches and runs. Asking
+    /// the volume directly also catches what a format name never could.
+    ///
+    /// A network share is not refused. Prefixes there have locking and speed problems of their
+    /// own, so `locationWarning` tells the picker; the folder can still be used.
+    public static func locationProblem(_ url: URL, defaultHome: URL = defaultHome) -> String? {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return "That folder does not exist." }
+        guard fm.isWritableFile(atPath: url.path) else { return "KLYC-Box cannot write in that folder." }
+        let target = url.standardizedFileURL.path + "/", base = defaultHome.standardizedFileURL.path + "/"
+        if target.hasPrefix(base) || base.hasPrefix(target) { return "Pick a folder outside KLYC-Box's own data folder." }
+        if (try? url.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly == true {
+            return "That volume is read only."
+        }
+        // FAT32 stops at one byte under 4 GiB per file, and game files pass that routinely. macOS
+        // reports the real limit, so this asks rather than matching on a format name (measured
+        // 2026-09-09: FAT32 4294967295, exFAT and APFS effectively unlimited).
+        if let max = (try? url.resourceValues(forKeys: [.volumeMaximumFileSizeKey]))?.volumeMaximumFileSize,
+           max < 4 << 30 {
+            return "That drive cannot store a file larger than \(max >> 30) GB, and game files are often bigger. Format it as APFS, or pick another drive."
+        }
+        return volumeProblem(url)
+    }
+
+    /// Why a usable folder is still a poor place for a prefix, or nil. Shown before the move,
+    /// never as a hard stop.
+    public static func locationWarning(_ url: URL) -> String? {
+        guard isNetworkVolume(url) else { return nil }
+        return "This folder is on a network share. Games can be slower there, and file locks sometimes get in the way. You can still use it."
+    }
+
+    /// Unknown paths fail closed as local, so a missing folder is not a scare.
+    static func isNetworkVolume(_ url: URL) -> Bool {
+        var st = statfs()
+        guard statfs(url.path, &st) == 0 else { return false }
+        return UInt32(st.f_flags) & UInt32(MNT_LOCAL) == 0
+    }
+
+    /// Makes and removes a scratch folder inside `url` to check what Wine actually needs from the
+    /// volume. Leaves nothing behind, including when a check fails.
+    static func volumeProblem(_ url: URL, uuid: String = UUID().uuidString) -> String? {
+        let fm = FileManager.default
+        let probe = url.appending(path: ".klyc-probe-" + uuid.prefix(8))
+        defer { try? fm.removeItem(at: probe) }
+        do { try fm.createDirectory(at: probe, withIntermediateDirectories: true) }
+        catch { return "KLYC-Box cannot write in that folder." }
+        do { try fm.createSymbolicLink(atPath: probe.appending(path: "link").path, withDestinationPath: "target") }
+        catch {
+            return "That drive cannot hold a Windows environment: an environment's drive letters are symbolic links, and this volume does not support them. Format it as APFS, or pick another drive."
+        }
+        // Wine's C: is dosdevices/c: → drive_c. A share can allow `link` and still reject a colon.
+        do {
+            try fm.createDirectory(at: probe.appending(path: "drive_c"), withIntermediateDirectories: true)
+            try fm.createSymbolicLink(atPath: probe.appending(path: "c:").path, withDestinationPath: "drive_c")
+        } catch {
+            return "That drive cannot hold a Windows environment: an environment's drive letters are files named c:, and this volume does not allow a colon in a name. Pick a folder on this Mac, an APFS disk, or a network share that keeps Unix file names."
+        }
+        let bin = probe.appending(path: "bin")
+        guard fm.createFile(atPath: bin.path, contents: Data("#!/bin/sh\nexit 0\n".utf8),
+                            attributes: [.posixPermissions: 0o755]) else {
+            return "KLYC-Box cannot write in that folder."
+        }
+        let mode = ((try? fm.attributesOfItem(atPath: bin.path))?[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
+        guard mode & 0o100 != 0 else {
+            return "That drive cannot hold a Windows environment: KLYC-Box runs its engine from here, and this volume does not keep the execute permission. Format it as APFS, or pick another drive."
+        }
+        return nil
+    }
+
+    public var downloads: URL { home.appending(path: "downloads", directoryHint: .isDirectory) }
+    public var engines: URL { home.appending(path: "engines", directoryHint: .isDirectory) }
+    public var bottles: URL { home.appending(path: "bottles", directoryHint: .isDirectory) }
+    public var logs: URL { home.appending(path: "logs", directoryHint: .isDirectory) }
+    public var manifests: URL { home.appending(path: "manifests", directoryHint: .isDirectory) }
+    /// Staging for bottles on their way out. A sibling of `bottles/` rather than a child, so
+    /// nothing that enumerates bottles ever sees a half-purged tree, and inside `home` rather
+    /// than `~/.Trash` so the move is always same-filesystem — `rename(2)` cannot cross one,
+    /// and Finder could not empty an undeletable prefix anyway.
+    public var trash: URL { home.appending(path: ".trash", directoryHint: .isDirectory) }
+
+    public func engine(_ id: String) -> URL { engines.appending(path: id, directoryHint: .isDirectory) }
+    public func bottle(_ name: String) -> URL { bottles.appending(path: name, directoryHint: .isDirectory) }
+
+    public func ensure() throws {
+        for dir in [home, downloads, engines, bottles, logs, manifests, trash] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        excludeFromSpotlight()
+    }
+
+    /// Keeps Spotlight out of the engines and environments. A game install is tens or hundreds of
+    /// gigabytes of files nobody searches for, and indexing them costs real time: after a 75 GB
+    /// install on 2026-09-09 mds_stores sat at 55% with the load average above 300, the machine was
+    /// unusable for minutes, and a game launched into it looked like it had hung. The marker file
+    /// is the documented way to say "never index this subtree" and costs nothing when Spotlight is
+    /// already off.
+    func excludeFromSpotlight() {
+        let marker = home.appending(path: ".metadata_never_index")
+        guard !FileManager.default.fileExists(atPath: marker.path) else { return }
+        FileManager.default.createFile(atPath: marker.path, contents: nil)
+    }
+
+    /// Whether this home holds anything worth moving.
+    public var hasData: Bool {
+        let fm = FileManager.default
+        return [engines, bottles].contains { (try? fm.contentsOfDirectory(atPath: $0.path))?.contains { !$0.hasPrefix(".") } == true }
+    }
+}
+
+/// Builds a pre-filled GitHub bug-report URL: system info and a digest of the most relevant
+/// log land in the issue form (field ids: what/chip/version/log in .github/ISSUE_TEMPLATE/bug.yml),
+/// so every report arrives with the context that triage always needs.
+public enum BugReport {
+    /// Strings that prove a log recorded a real graphics-stack launch. Backend names only —
+    /// never a game or exe name, so this keeps working for titles nobody has heard of.
+    ///
+    /// Picking the log by CONTENT rather than by filename is the whole point. A game that can
+    /// only be started from a launcher's own UI (legacy CS:GO's CEG chooser) never gets a wine
+    /// log of its own: Wine hands the entire process tree one pipe, so the game's DXVK output
+    /// lands in the LAUNCHER's log. The previous picker skipped launcher logs by name and so
+    /// attached the one file guaranteed not to mention the game — in issue #21 that was a
+    /// wineboot log, and it cost four rounds of guessing.
+    static let backendMarkers = [
+        "info:  Game:",             // DXVK/d9vk banner: names the exe that created the device
+        "DXVK-Kegworks",
+        "DXVK:",
+        "Found config file:",
+        "Effective configuration:",
+        "winemetal",                // DXMT
+        "D3DMetal",
+        "wined3d_adapter_create",
+    ]
+
+    /// Kept in the digest for context, but deliberately NOT used to choose a log: every wine
+    /// process emits `init_peb starting`, so treating it as a backend signal would make almost
+    /// any log "informative" and collapse selection back to newest-wins.
+    static let contextMarkers = ["init_peb starting"]
+
+    static let errorMarkers = ["err:", "[mvk-error]", "Assertion Failed", "Backtrace:"]
+    /// Wine shouts these on every single launch and they have never explained a failure. Left in
+    /// the budget they crowd the real errors out: one issue #21 log carries 24 HID lines and 740
+    /// identical font-handle lines before anything diagnostic.
+    static let benignMarkers = [
+        "handle_DeviceMatchingCallback",
+        "kerberos_LsaApInitializePackage",
+        "ntlm_check_version",
+        "ntlm_LsaApInitializePackage",
+        "process_run_key Error running cmd",
+        "RoGetActivationFactory",
+    ]
+    static let maxErrorLines = 40
+    static let tailLines = 40
+    static let maxDigestCharacters = 8000
+    /// How many of the newest logs to open. The directory accumulates hundreds of files.
+    static let maxLogsExamined = 15
+    /// GitHub answers a request URI over roughly 8 KB with 414, and percent-encoding a log can
+    /// several-fold its length (every newline becomes %0A), so the ENCODED url is what must be
+    /// budgeted — not the digest's character count. Someone not signed in to GitHub is sent to
+    /// the login page with the whole link as its return address, and that page answers "Whoops,
+    /// something went wrong!" once the address passes about 7 KB (a report link of about 5.8 KB),
+    /// then drops the address altogether, report and all, past about 6.4 KB. Measured on
+    /// 2026-10-01 after a player hit the error page.
+    static let maxURLCharacters = 5000
+    /// A single launch here has produced a 167 MB log, so never read one whole. The banner and
+    /// the effective configuration are written when the game creates its device, early in its
+    /// output; the runaway repetition that makes a log enormous always comes later. Kept modest
+    /// because `url()` scans up to `maxLogsExamined` of these on the calling thread.
+    static let maxHeadBytes = 1 << 20
+    static let maxTailBytes = 256 << 10
+
+    /// Wine infrastructure and launcher processes that are never the frozen game. Anything
+    /// else running from a bottle's drive_c with an .exe suffix is a candidate.
+    static let infraExes: Set<String> = [
+        "steam.exe", "steamwebhelper.exe", "steamservice.exe", "steamerrorreporter.exe",
+        "services.exe", "svchost.exe", "winedevice.exe", "plugplay.exe", "rpcss.exe",
+        "explorer.exe", "wineboot.exe", "conhost.exe", "rundll32.exe", "reg.exe",
+        "gameoverlayui.exe", "gameoverlayui64.exe", "x86launcher.exe", "cmd.exe",
+        "epicgameslauncher.exe", "epicwebhelper.exe", "unrealcefsubprocess.exe",
+    ]
+
+    /// Parses `ps -Ao pid=,command=` output into candidate game processes: anything running
+    /// out of a bottle's drive_c that isn't wine plumbing or a launcher. Pure for testability.
+    public static func gameProcesses(fromPS ps: String) -> [(pid: Int32, exe: String)] {
+        var out: [(Int32, String)] = []
+        for line in ps.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let sp = trimmed.firstIndex(of: " "), let pid = Int32(trimmed[..<sp]) else { continue }
+            let command = String(trimmed[trimmed.index(after: sp)...])
+            guard command.contains("/drive_c/") else { continue }
+            // The executable path ends at ".exe"; what follows are the game's own arguments.
+            guard let range = command.range(of: ".exe", options: [.caseInsensitive]) else { continue }
+            let exePath = String(command[..<range.upperBound])
+            let exe = (exePath as NSString).lastPathComponent.lowercased()
+            guard !infraExes.contains(exe) else { continue }
+            out.append((pid, exe))
+        }
+        return out
+    }
+
+    /// The issue #21 lesson, made permanent: a frozen game produces no crash, no exit and no
+    /// fresh log lines, so a report filed DURING the freeze used to contain nothing at all —
+    /// five diagnostic rounds to learn where one stack trace would have answered it. Now the
+    /// report button samples any live game process (macOS `sample`, 5 s) into the logs
+    /// directory, and the digest names the file so the user attaches it.
+    static func sampleRunningGames(paths: KLYCPaths) -> [String] {
+        guard let ps = try? Shell.capture("/bin/ps", ["-Ao", "pid=,command="]) else { return [] }
+        var written: [String] = []
+        for (pid, exe) in gameProcesses(fromPS: ps).prefix(2) {
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
+            let file = paths.logs.appending(path: "\(stamp)-sample-\(exe).txt")
+            if (try? Shell.run("/usr/bin/sample", [String(pid), "5", "-f", file.path])) != nil {
+                written.append(file.lastPathComponent)
+            }
+        }
+        return written
+    }
+
+    /// Where a launch can leave a log: KLYC-Box's own directory, plus the per-process files DXVK
+    /// writes inside each bottle (DXVK_LOG_PATH, set in `Bottle.environment`). The DXVK files
+    /// matter because they survive the one case KLYC-Box cannot otherwise observe — a game
+    /// started by a launcher client that KLYC-Box did not spawn.
+    static func logDirectories(_ paths: KLYCPaths) -> [URL] {
+        var dirs = [paths.logs]
+        let bottles = (try? FileManager.default.contentsOfDirectory(at: paths.bottles, includingPropertiesForKeys: nil)) ?? []
+        dirs += bottles.map { $0.appending(path: "drive_c/klycbox/logs") }
+        return dirs.filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Head and tail of a log, bounded. A gap marker records what was skipped so nobody reads
+    /// the result as complete.
+    static func boundedText(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: 0)
+        guard size > UInt64(maxHeadBytes + maxTailBytes) else {
+            return (try? handle.readToEnd()).map { String(decoding: $0, as: UTF8.self) }
+        }
+        let head = (try? handle.read(upToCount: maxHeadBytes)) ?? Data()
+        try? handle.seek(toOffset: size - UInt64(maxTailBytes))
+        let tail = (try? handle.readToEnd()) ?? Data()
+        let skipped = size - UInt64(maxHeadBytes) - UInt64(maxTailBytes)
+        return String(decoding: head, as: UTF8.self)
+            + "\n… \(skipped) bytes not scanned …\n"
+            + String(decoding: tail, as: UTF8.self)
+    }
+
+    /// Condenses a wine log to the lines triage actually reads: the launch header and exit
+    /// footer, the first sighting of each graphics-backend marker (with the indented block that
+    /// follows a configuration dump), the errors, and the tail. Runs of an identical line
+    /// collapse to one `(xN)`.
+    ///
+    /// A blind `suffix(30)` — what this replaced — is structurally useless on a wine log: the
+    /// end is always MoltenVK warning spam, while the block naming the backend sits thousands of
+    /// lines earlier (line 6547 of 8185 in the issue #21 logs).
+    public static func digest(_ text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard !lines.isEmpty else { return "" }
+        var keep = Set<Int>()
+        var note: [Int: String] = [:]
+        // The "# …" launch header and the "# exit=" footer.
+        for (i, line) in lines.enumerated() where line.hasPrefix("#") { keep.insert(i) }
+        for marker in backendMarkers + contextMarkers {
+            guard let i = lines.firstIndex(where: { $0.contains(marker) }) else { continue }
+            keep.insert(i)
+            // The indented report that follows a configuration dump.
+            var j = i + 1
+            while j < lines.count, lines[j].hasPrefix("info:    ") { keep.insert(j); j += 1 }
+        }
+        // Errors: benign startup noise dropped, the rest deduplicated across the whole log so a
+        // failure repeated 740 times costs one line and still reports its true count.
+        var firstIndex: [String: Int] = [:]
+        var occurrences: [String: Int] = [:]
+        var order: [String] = []
+        var errorKey: [Int: String] = [:]
+        for (i, line) in lines.enumerated()
+        where errorMarkers.contains(where: line.contains) && !benignMarkers.contains(where: line.contains) {
+            let key = normalizedError(line)
+            errorKey[i] = key
+            if firstIndex[key] == nil { firstIndex[key] = i; order.append(key) }
+            occurrences[key, default: 0] += 1
+        }
+        for key in order.prefix(maxErrorLines) {
+            guard let i = firstIndex[key] else { continue }
+            keep.insert(i)
+            if let n = occurrences[key], n > 1 { note[i] = "(x\(n))" }
+        }
+        // The tail: where a crash lands, and where a freeze simply stops. An error already
+        // represented above is skipped here, so one failure can never appear twice carrying two
+        // different counts.
+        for i in max(0, lines.count - tailLines)..<lines.count {
+            if let key = errorKey[i], firstIndex[key] != i { continue }
+            keep.insert(i)
+        }
+
+        var out: [String] = []
+        var previous = -1
+        var repeats = 0
+        func collapse() {
+            if repeats > 1, !out.isEmpty { out[out.count - 1] += "  (x\(repeats))" }
+            repeats = 0
+        }
+        for i in keep.sorted() {
+            let rendered = note[i].map { "\(clip(lines[i]))  \($0)" } ?? clip(lines[i])
+            if i == previous + 1, repeats > 0, rendered == out.last { repeats += 1; previous = i; continue }
+            collapse()
+            if previous >= 0, i > previous + 1 { out.append("… \(i - previous - 1) lines …") }
+            out.append(rendered)
+            repeats = 1
+            previous = i
+        }
+        collapse()
+        return redactHome(trim(out))
+    }
+
+    /// Longest single line kept. Bounds the digest and, not incidentally, stops a very long opaque
+    /// value — a launcher URL carrying an auth token, which real Epic logs here do contain — from
+    /// being pasted whole into a public GitHub issue.
+    static let maxLineCharacters = 300
+    static func clip(_ line: String) -> String {
+        guard line.count > maxLineCharacters else { return line }
+        return line.prefix(maxLineCharacters) + "… (+\(line.count - maxLineCharacters) chars)"
+    }
+
+    /// Joins the kept lines, and if they exceed the budget keeps BOTH ENDS: the head carries the
+    /// launch header, the backend banner and the effective configuration; the tail carries how the
+    /// run ended. A plain `suffix` would drop exactly the head — the content this function exists
+    /// to preserve — and keep the MoltenVK spam, reinstating the failure it was written to fix.
+    static func trim(_ lines: [String]) -> String {
+        let whole = lines.joined(separator: "\n")
+        guard whole.count > maxDigestCharacters else { return whole }
+        let headBudget = maxDigestCharacters * 2 / 3
+        var head: [String] = [], used = 0
+        for line in lines {
+            if used + line.count + 1 > headBudget, !head.isEmpty { break }
+            head.append(line); used += line.count + 1
+        }
+        var tail: [String] = [], tailUsed = 0
+        for line in lines[head.count...].reversed() {
+            if used + tailUsed + line.count + 1 > maxDigestCharacters { break }
+            tail.append(line); tailUsed += line.count + 1
+        }
+        let dropped = lines.count - head.count - tail.count
+        guard dropped > 0 else { return whole }
+        return (head + ["… \(dropped) digest lines dropped …"] + tail.reversed()).joined(separator: "\n")
+    }
+
+    /// Replaces the user's home directory with `~`. Wine command lines and DLL search paths are
+    /// absolute, so they carry the account name into a public issue for no diagnostic gain.
+    static func redactHome(_ text: String) -> String {
+        let home = NSHomeDirectory()
+        return home.count > 1 ? text.replacingOccurrences(of: home, with: "~") : text
+    }
+
+    /// An error line stripped of what varies between otherwise identical occurrences: Wine's
+    /// per-thread id prefix and any hex addresses. Without this, the same failure on eight
+    /// threads reads as eight different problems.
+    static func normalizedError(_ line: String) -> String {
+        var text = line
+        if let colon = text.firstIndex(of: ":"), text.distance(from: text.startIndex, to: colon) == 4,
+           text[text.startIndex..<colon].allSatisfy(\.isHexDigit) {
+            text = String(text[text.index(after: colon)...])
+        }
+        return text.replacingOccurrences(of: "0x[0-9a-fA-F]+", with: "0x…", options: .regularExpression)
+    }
+
+    /// The log most likely to explain what went wrong: the newest one that actually recorded a
+    /// graphics backend, falling back to the newest of all.
+    static func mostInformativeLog(in directories: [URL]) -> (url: URL, text: String)? {
+        let key: Set<URLResourceKey> = [.contentModificationDateKey]
+        var logs: [URL] = []
+        for dir in directories {
+            let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: Array(key))) ?? []
+            logs += files.filter { $0.pathExtension == "log" }
+        }
+        let modified: (URL) -> Date = {
+            (try? $0.resourceValues(forKeys: key))?.contentModificationDate ?? .distantPast
+        }
+        let newestFirst = logs.sorted { modified($0) > modified($1) }.prefix(maxLogsExamined)
+        // A wineboot log is the prefix booting, and it ends before the game starts, so it can
+        // never show a game failing. It nonetheless matches a backend marker, because wineboot
+        // creates a d3d adapter and Wine shouts `wined3d_adapter_create` while doing it — so the
+        // marker test alone ranked it "informative". In issue #21 the reporter sent one twice,
+        // both times chosen by this picker, and each round cost days. Repair runs wineboot, so it
+        // is also the log most likely to be the newest one after someone follows fix instructions.
+        let isPrefixBoot: (URL) -> Bool = { $0.lastPathComponent.hasSuffix("-wineboot.log") }
+        var fallback: (url: URL, text: String)?
+        var bootFallback: (url: URL, text: String)?
+        for url in newestFirst {
+            guard let text = boundedText(of: url) else { continue }
+            if isPrefixBoot(url) {
+                if bootFallback == nil { bootFallback = (url, text) }
+                continue
+            }
+            if backendMarkers.contains(where: text.contains) { return (url, text) }
+            if fallback == nil { fallback = (url, text) }
+        }
+        // Only when it is genuinely the only thing on disk — a bottle that has never run anything.
+        return fallback ?? bootFallback
+    }
+
+    /// `samplingLiveGames: false` skips the live-process sample (tests; callers that must not
+    /// block for the ~5 s a sample takes).
+    public static func url(version: String, paths: KLYCPaths = KLYCPaths(), samplingLiveGames: Bool = true) -> URL {
+        let chip = Machine.chip()
+        let macos = Machine.macOSVersion()
+        var logDigest = ""
+        // A game frozen right now is the one moment its stack is capturable — grab it first.
+        let samples = samplingLiveGames ? sampleRunningGames(paths: paths) : []
+        if !samples.isEmpty {
+            logDigest += "Live game sampled during this report — PLEASE ATTACH from ~/Library/Application Support/KLYC-Box/logs/:\n"
+                + samples.map { "  \($0)" }.joined(separator: "\n") + "\n\n"
+        }
+        if let found = mostInformativeLog(in: logDirectories(paths)) {
+            // Name the full file too: the digest is a summary, and triage may want the original.
+            logDigest += "\(redactHome(found.url.path)):\n\(digest(found.text))"
+        }
+        func url(log: String) -> URL {
+            var comps = URLComponents(string: "https://github.com/ernklyc/klyc-box/issues/new")!
+            comps.queryItems = [
+                URLQueryItem(name: "template", value: "bug.yml"),
+                URLQueryItem(name: "chip", value: "\(chip), macOS \(macos)"),
+                URLQueryItem(name: "version", value: version),
+                URLQueryItem(name: "log", value: log),
+            ]
+            return comps.url!
+        }
+        // Shrink from the tail until the encoded URL fits: the head holds the launch header, the
+        // backend banner and the effective configuration, which are what triage reads first.
+        var result = url(log: logDigest)
+        while result.absoluteString.count > maxURLCharacters, logDigest.count > 400 {
+            logDigest = String(logDigest.prefix(logDigest.count * 3 / 4))
+            result = url(log: logDigest)
+        }
+        return result
+    }
+}

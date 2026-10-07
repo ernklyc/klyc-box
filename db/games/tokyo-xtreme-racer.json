@@ -1,0 +1,15 @@
+{
+  "id": "tokyo-xtreme-racer",
+  "title": "Tokyo Xtreme Racer",
+  "steam_appid": 2634950,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "anticheat": null,
+  "provenance": "Reported by ponglerdluk (upstream#287, 2026-10-02), Apple M5 in a MacBook Pro, macOS 26.6.2, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, Apple's DirectX 12 support (D3DMetal) as the environment's mode, rated 5 of 5 once set up, session length not stated, recipes steam, vcrun2022, fakejapanese, corefonts. Not verified by the maintainer.",
+  "notes": "Reported perfect on D3DMetal on the default engine once two things are set: the game's DirectX 11 build is started with -d3d11 (Steam offers 'Play Tokyo Xtreme Racer (DirectX 11)' at launch, and the reporter put -d3d11 in Steam's launch options), and the environment's graphics mode is Apple's DirectX 12 support. In-game settings all Medium with TSR anti-aliasing, which the reporter says keeps the MacBook Pro cool and the game playable. The row passes -d3d11 to the game on Play so the Steam launch option is not needed. No frame rate was given and nothing was measured here, so whether the game also runs on DXMT with -d3d11, or on D3DMetal without it, is not known.",
+  "knownIssues": [],
+  "launchArgs": [
+    "-d3d11"
+  ],
+  "lastVerified": null
+}

@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// KLYC-Box player reports.
+//
+// One report per player per game: reports/{appid}_{uid}. Players write only their own report and
+// can never read anyone's: the collection is private. A script run with the project's admin
+// rights (aggregate-reports.mjs) turns the reports into a small public file of totals.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function validReport(r) {
+      return r.keys().hasOnly(['appid', 'works', 'rating', 'chip', 'macos', 'engine', 'renderer', 'note', 'updatedAt'])
+        && r.keys().hasAll(['appid', 'works', 'rating', 'updatedAt'])
+        && r.appid is int && r.appid > 0 && r.appid < 100000000
+        && r.works is bool
+        && r.rating is int && r.rating >= 1 && r.rating <= 5
+        && (!('chip' in r) || (r.chip is string && r.chip.size() <= 40))
+        && (!('macos' in r) || (r.macos is string && r.macos.size() <= 20))
+        && (!('engine' in r) || (r.engine is string && r.engine.size() <= 60))
+        && (!('renderer' in r) || (r.renderer is string && r.renderer.size() <= 20))
+        && (!('note' in r) || (r.note is string && r.note.size() <= 200))
+        && r.updatedAt == request.time;
+    }
+
+    match /reports/{reportId} {
+      allow read: if false;
+      allow create, update: if request.auth != null
+        && reportId == string(request.resource.data.appid) + '_' + request.auth.uid
+        && validReport(request.resource.data);
+      // A player can take their own report back.
+      allow delete: if request.auth != null && reportId.matches('^[0-9]+_' + request.auth.uid + '$');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

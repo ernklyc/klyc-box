@@ -1,0 +1,37 @@
+{
+  "id": "hogwarts-legacy",
+  "kind": "game",
+  "title": "Hogwarts Legacy",
+  "requires": [
+    "steam"
+  ],
+  "renderer": "d3dmetal",
+  "steps": [
+    {
+      "type": "renderer",
+      "renderer": "d3dmetal"
+    },
+    {
+      "type": "environment",
+      "name": "ROSETTA_ADVERTISE_AVX",
+      "value": "1"
+    },
+    {
+      "type": "note",
+      "text": "DirectX 12 only, so D3DMetal, on KLYC-Box 0.9.19 or later (its engines carry the corrected DirectX 12 shim, without it the game reports \"Failed to initialize DirectX 12\", upstream#48). Never add -dx11, the game crashes at start with two graphics API flags. AVX is advertised to the game because it was on in the working run; whether it is needed is not known."
+    }
+  ],
+  "knownIssues": [
+    {
+      "symptom": "\"Failed to initialize DirectX 12\" a few seconds after launch on D3DMetal, no crash, no log (reported on an M4 Max, macOS 15.7.7)",
+      "cause": "measured: the DirectX 12 timestamp shim exported its functions numbered from 1 and the game binds D3D12CreateDevice by ordinal 101",
+      "fix": "KLYC-Box 0.9.19 and its engines r3 and r9. Confirmed by the reporter"
+    },
+    {
+      "symptom": "Crashes at second zero at fixed addresses when -dx11 is among the Steam launch options",
+      "cause": "measured from the crash context: the game adds its own DirectX 12 flag and Unreal refuses two graphics API flags",
+      "fix": "never use -dx11 with this game"
+    }
+  ],
+  "lastVerified": null
+}

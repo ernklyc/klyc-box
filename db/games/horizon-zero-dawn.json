@@ -1,0 +1,10 @@
+{
+  "id": "horizon-zero-dawn",
+  "title": "Horizon Zero Dawn",
+  "steam_appid": 1151640,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "provenance": "community consensus (AppleGamingWiki / r-macgaming / MacPlay), unverified by KLYC-Box. diego-wendt (upstream#231, 2026-09-27): rated 5, perfect, the Epic Games Complete Edition, Apple M4 Pro, macOS 27.0, KLYC-Box 0.9.35, engine x64-sikarugir10.0_6-r7, environment in DXMT mode with the vcrun2022 and corefonts recipes, 14 minutes played through KLYC-Box.",
+  "notes": "D3D12, listed for D3DMetal. One report has the Epic Games Complete Edition perfect on an M4 Pro with macOS 27.0 in an environment set to DXMT mode after 14 minutes. No frame rate given and nothing measured here.",
+  "lastVerified": null
+}

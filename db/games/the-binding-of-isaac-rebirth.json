@@ -1,0 +1,30 @@
+{
+  "id": "the-binding-of-isaac-rebirth",
+  "title": "The Binding of Isaac: Rebirth (Repentance+)",
+  "steam_appid": 250900,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by phs1997 (upstream#119, 2026-09-18) playing the Repentance+ expansion: rated 3, playable with workarounds, on DXMT, Apple M2 Max, macOS 27.0, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.27, 97 minutes played through KLYC-Box. The workaround, added in a follow-up comment: when the game starts lagging, restarting it helps a lot. A later report from the same player (upstream#125, 2026-09-19) rates it 5, perfect, after 244 minutes on DXMT, Apple M2 Max, macOS 27.0, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.27, so the newer engine and app made the lag a non-issue for them. DakiTheBest (upstream#270, 2026-10-01) rates it 5, perfect, after 7 minutes on DXMT, Apple M1 Max, macOS 26.6.2, engine x64-sikarugir10.0_6-r11, KLYC-Box 0.9.39. iskarmous (upstream#271, 2026-10-01) rates it 4, playable with minor issues, after 66 minutes on DXMT, Apple M4, macOS 27.0.1, engine x64-sikarugir10.0_6-r11, KLYC-Box 0.9.39, with slight frame drops in rooms with many enemies, more often in Greed mode. Not run here.",
+  "notes": "Steam 250900 is the Rebirth base game; Repentance+ is its expansion and what the reports played. On the r5 engine and KLYC-Box 0.9.27 the same player calls it perfect over a four-hour session on DXMT (M2 Max, macOS 27); an earlier report on r5 and 0.9.27 saw the frame rate degrade over a long session, cleared by restarting the game. Frame rate not measured here. The Mac build on Steam stops at Afterbirth+, and Repentance is Windows only, so this row marks the Mac build as not the one to play. An M4 report (engine r11) sees slight frame drops in rooms crowded with enemies, mostly in Greed mode.",
+  "knownIssues": [
+    {
+      "symptom": "Slows down after a while of play (reported on DXMT, M2 Max, macOS 27, engine r5)",
+      "cause": "not diagnosed; reported as lag building up over a long session",
+      "fix": "Quit the game and start it again, the reporter says that helps a lot"
+    },
+    {
+      "symptom": "Slight frame drops in rooms with many enemies, more often in Greed mode (reported on an M4, DXMT, engine r11)",
+      "cause": "not diagnosed",
+      "fix": "None reported"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null,
+  "verified": null,
+  "nativeMac": {
+    "available": false,
+    "where": "Steam",
+    "note": "Steam's Mac build stops at Afterbirth+. Repentance and Repentance+ are Windows only (Steam 1426300), so the Windows build is the one to play if you own them."
+  }
+}

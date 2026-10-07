@@ -1,0 +1,19 @@
+{
+  "id": "roadcraft",
+  "title": "RoadCraft",
+  "steam_appid": 2104890,
+  "status": "community",
+  "renderer": null,
+  "anticheat": null,
+  "provenance": "Reported by Nenox-xD (upstream#30, 2026-09-13), Apple M4 Pro, macOS 26.6.2, KLYC-Box 0.9.9, engine x64-crossover26.3-r8, rated 4 of 5, played nicely. Graphics mode not stated. Not verified by the maintainer.",
+  "notes": "Reported playing nicely on the CrossOver-tree engine r8. The one issue reported is that you cannot tab out of the game once it is running (Command-Tab does not leave it), which is not the lost-input fault of upstream#182 and is followed on upstream#30. The reporter did not say which graphics mode. No measurement here yet.",
+  "knownIssues": [
+    {
+      "symptom": "Cannot switch away from the game with Command-Tab while it runs (reported)",
+      "cause": "not measured. Likely the game switching the Mac's display to its own resolution in fullscreen, which lets it hold the screen so macOS shows nothing else (the Wine 11 engine the reporter used already has the focus fixes)",
+      "fix": "not confirmed. Try Emulate display mode changes on the game's Advanced panel, or borderless or windowed in the game's options"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

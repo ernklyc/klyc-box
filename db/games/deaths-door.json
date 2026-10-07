@@ -1,0 +1,19 @@
+{
+  "id": "deaths-door",
+  "title": "Death's Door",
+  "steam_appid": 894020,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by SnoopyHuman (upstream#97, 2026-09-17), Apple M5, macOS 27, KLYC-Box 0.9.19, engine x64-sikarugir10.0_6-r3, DXVK, Epic copy, rated 5 of 5 after 3 minutes. Not verified by the maintainer. Then aptonline (upstream#309, 2026-10-04), Apple M1 Max, macOS 26.6.2, KLYC-Box 0.10.4, engine x64-sikarugir10.0_6-r19, DXMT, rated 5 of 5, the invisible characters gone.",
+  "notes": "Reported perfect on DXVK after a three-minute session on an M5, Epic copy, so this covers launch and the opening. The Steam id here is the same game on Steam. No measurement here yet. The invisible player and enemies of the DXVK mode (two reports, M1 Max and M2 Max) are gone on DXMT, confirmed by the M1 Max reporter on 0.10.4, so the row's mode is DXMT.",
+  "knownIssues": [
+    {
+      "symptom": "The player and enemies are invisible while the level draws (reported on an M1 Max and again on an M2 Max, both with DXVK, upstream#219)",
+      "cause": "DXVK's Vulkan on MoltenVK has no transform feedback on any Apple GPU, so the 35 stream-output geometry shaders Unity creates to animate characters fail to build (the log says Transform feedback not supported by device, then Metal rejects the pipelines) while the scenery's shaders build fine. Not chip generation, the M2 Max reproduces it",
+      "fix": "Set Mode for this game to DXMT (the mode this row now applies). Confirmed by the M1 Max reporter on KLYC-Box 0.10.4 with the default engine r19 (upstream#219, upstream#309): after the update, with no setting changed, the player and enemies draw. Before 0.10.2 the per-game mode did not reach a Steam launch, so the fix only works from there."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

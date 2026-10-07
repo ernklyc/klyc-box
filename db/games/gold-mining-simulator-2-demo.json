@@ -1,0 +1,45 @@
+{
+  "id": "gold-mining-simulator-2-demo",
+  "title": "Gold Mining Simulator 2 Demo",
+  "steam_appid": 3626940,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "anticheat": null,
+  "provenance": "Reported by ZiarnoM (upstream#215, 2026-09-27), Apple M2 Pro 16 GB, macOS 26.5.1, KLYC-Box 0.9.35, engine x64-sikarugir10.0_6-r7, D3DMetal with the launch option -dx12. Not verified by the maintainer.",
+  "notes": "Unreal Engine. The free singleplayer demo of Gold Mining Simulator 2 (full game Steam 2885380). Runs on D3DMetal with -dx12, which the game needs: without it it falls back to Direct3D 11 and crashes. Reported about 135 fps in the menu and about 30 fps in game at 1920x1080 windowed, all Low, 3D resolution 50%, 18 to 20 fps at 3440x1440. The game uses 11 to 13 GB of memory, so close other apps on a 16 GB Mac. Nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "Crashes at start on DXMT and DXVK with an Unreal fatal error (CreateTexture2D failed with E_FAIL on a shared render target, MiscFlags 0x2), reported on an M2 Pro, engine r7.",
+      "cause": "the shared-texture failure ContractVille also hits on the default engine up to r11: DXMT's D3DKMT adapter lookup fails on that Wine, so a shared render target could not be created and Unreal treats that as fatal.",
+      "fix": "launch with -dx12 on D3DMetal, which KLYC-Box does from this entry. From engine r13 (KLYC-Box 0.10 beta) the Direct3D 11 path no longer crashes on this either, not yet tried with this game."
+    },
+    {
+      "symptom": "\"DirectX 12 is not supported on your system\" (reported).",
+      "cause": "processes left running from an earlier launch in another mode, per the reporter.",
+      "fix": "stop the environment (or restart the Mac) and launch again."
+    },
+    {
+      "symptom": "Frame rate falls to about 3 fps with other apps open (reported on 16 GB).",
+      "cause": "the game uses 11 to 13 GB and the Mac swaps.",
+      "fix": "close the browser and other apps before playing."
+    }
+  ],
+  "rendererResults": {
+    "d3dmetal": {
+      "verdict": "works",
+      "detail": "with -dx12, about 30 fps in game at 1080p Low (reported, M2 Pro)"
+    },
+    "dxmt": {
+      "verdict": "fails",
+      "detail": "crash at start, shared texture E_FAIL (reported, engine r7)"
+    },
+    "dxvk": {
+      "verdict": "fails",
+      "detail": "crash at start, same fatal error (reported, engine r7)"
+    }
+  },
+  "launchArgs": [
+    "-dx12"
+  ],
+  "lastVerified": null
+}

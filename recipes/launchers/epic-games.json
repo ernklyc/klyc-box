@@ -1,0 +1,65 @@
+{
+  "id": "epic-games",
+  "kind": "launcher",
+  "title": "Epic Games Launcher",
+  "renderer": "dxmt",
+  "steps": [
+    {
+      "type": "sync",
+      "sync": "none"
+    },
+    {
+      "type": "installer",
+      "url": "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/installer/download/EpicGamesLauncherInstaller.msi",
+      "sha256": null,
+      "arguments": [],
+      "label": "EpicInstaller",
+      "msi": true
+    },
+    {
+      "type": "pin",
+      "pin": {
+        "id": "6B1F0D2A-0000-4000-8000-000000000002",
+        "name": "Epic Games",
+        "path": "Program Files/Epic Games/Launcher/Portal/Binaries/Win64/EpicGamesLauncher.exe",
+        "arguments": [
+          "-SkipBuildPatchPrereq"
+        ],
+        "environment": {},
+        "renderer": "dxvk"
+      }
+    },
+    {
+      "type": "note",
+      "text": "MSI installs silently via msiexec /i ... /qn. The launcher UI is heavy CEF; first start takes minutes. -SkipBuildPatchPrereq avoids a prerequisite loop under Wine."
+    }
+  ],
+  "knownIssues": [
+    {
+      "symptom": "Launcher window is solid black",
+      "cause": "Epic's embedded Chromium webview renders black under DXMT",
+      "fix": "the launcher pin now runs under DXVK (games in the bottle still use the bottle's renderer)"
+    },
+    {
+      "symptom": "Launcher downloads its own update, then closes and nothing happens",
+      "cause": "Epic's self-update restart doesn't survive Wine",
+      "fix": "open Epic again from the bottle; it resumes where it left off"
+    },
+    {
+      "symptom": "Installing any game fails with 'You do not have permission to install to...' (DP-07), regardless of folder",
+      "cause": "Epic audits Windows file permissions after its helper grants them and Wine cannot satisfy the audit (log shows 'Authorize success without gaining access'); no install folder avoids it",
+      "fix": "none inside the launcher; a direct install path for Epic games (Legendary-style) is planned, tracked in klycbox issue 14"
+    }
+  ],
+  "lastVerified": {
+    "date": "2026-08-25",
+    "engine": "x64-sikarugir10.0_6-r0",
+    "macos": "14.6",
+    "chip": "Apple M1 Pro",
+    "result": "launcher UI renders correctly with the DXVK pin (black under DXMT); self-update downloads and applies but needs a manual relaunch; game-install DP-07 not yet reproduced locally"
+  },
+  "blocked": {
+    "reason": "The Epic launcher's installer audits Windows ACLs that Wine doesn't persist, so its install flow can't complete. Use 'Connect Epic account' in KLYC-Box instead: installs go through the open source Legendary client and skip the launcher entirely.",
+    "tracking": "https://github.com/ernklyc/klyc-box/issues/14"
+  }
+}

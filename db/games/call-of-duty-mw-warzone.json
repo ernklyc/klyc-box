@@ -1,0 +1,17 @@
+{
+  "id": "call-of-duty-mw-warzone",
+  "title": "Call of Duty (MW/Warzone)",
+  "steam_appid": 1938090,
+  "status": "blocked-anticheat",
+  "renderer": null,
+  "provenance": "kernel anti-cheat, structurally impossible under Wine",
+  "notes": "Ricochet kernel driver",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "RICOCHET"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  }
+}

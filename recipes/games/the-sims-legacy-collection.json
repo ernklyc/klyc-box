@@ -1,0 +1,33 @@
+{
+  "id": "the-sims-legacy-collection",
+  "kind": "game",
+  "title": "The Sims Legacy Collection",
+  "requires": [
+    "steam"
+  ],
+  "steps": [
+    {
+      "type": "environment",
+      "name": "MVK_SHADOW_IMPORT",
+      "value": "1"
+    },
+    {
+      "type": "note",
+      "text": "This game draws with Vulkan, not Direct3D, so the renderer setting does nothing for it. What it needs is engine x64-sikarugir10.0_6-r1 or newer, whose MoltenVK carries KLYC-Box's shadow-import patch, plus the MVK_SHADOW_IMPORT=1 this recipe sets. Without both, the window opens black: the game's Vulkan device is lost on its first frame and never recovers."
+    }
+  ],
+  "knownIssues": [
+    {
+      "symptom": "Black window on launch, game and audio running behind it",
+      "cause": "32-bit game with a native Vulkan renderer: Wine's wow64 layer imports its own host memory into MoltenVK for host-visible allocations, and Metal fails every vkQueueSubmit over those no-copy pages with kIOGPUCommandBufferCallbackErrorOutOfMemory (verified 2026-09-02 on macOS 26.6.2, M1 Pro; same signature as KhronosGroup/MoltenVK#2766 on an M5).",
+      "fix": "Engine r1 or newer plus MVK_SHADOW_IMPORT=1 (this recipe). Verified: with the patched MoltenVK and the flag, zero device losses and the game plays; with the same build and the flag off, six device losses and a black screen."
+    }
+  ],
+  "lastVerified": {
+    "date": "2026-09-02",
+    "engine": "x64-sikarugir10.0_6-r1",
+    "macos": "26.6.2 (25G83)",
+    "chip": "Apple M1 Pro",
+    "result": "Through the shipped path (engine r1's patched MoltenVK 1.4.1, this recipe's MVK_SHADOW_IMPORT=1, cold Steam start, launched from Steam): neighbourhood view renders at 117 fps, 1728x1117 (Metal HUD), frames live for 90 s. Earlier the same day with the experimental 1.4.2 build: lot loads, a Sim takes orders, 65 fps, clean exit. Same build with the flag off: six lost devices and a black screen."
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "id": "euro-truck-simulator-2",
+  "title": "Euro Truck Simulator 2",
+  "steam_appid": 227300,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by nik-19201 (upstream#288, 2026-10-03), Apple M1, macOS 27.0.1, KLYC-Box 0.10.4 beta, engine x64-crossover26.3-r16 (the Wine 11 engine), DXMT, works perfectly in their words, maps loading faster than on the default engine. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXMT on the Wine 11 engine r16 on an M1, with maps loading faster than on the default engine, where the same reporter saw mouse and camera delays. On the Wine 11 engine r15 it did not start, the DXMT start-up crash that r16 removes. Nothing was measured here. The game has a native Mac version on Steam as well.",
+  "knownIssues": [
+    {
+      "symptom": "On the Wine 11 engine r15 in DXMT mode the game does not start, while the default engine starts it on the same Mac (reported on an M1, macOS 27.0.1, upstream#288).",
+      "cause": "The DXMT build the Wine 11 engine carried from r11 to r15 built its clear pipelines before the Metal device they read was set up and could crash at start-up. The Wine 11 engine lost it in r16. Confirmed by the reporter's r16 run rather than measured here.",
+      "fix": "Pick the Wine 11 engine r16 or newer on the game's Full page under Advanced, Engine (0.10.4 beta or later), or stay on the default engine, which the reporter found slower with mouse and camera delays."
+    }
+  ],
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  }
+}

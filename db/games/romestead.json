@@ -1,0 +1,14 @@
+{
+  "id": "romestead",
+  "title": "Romestead",
+  "steam_appid": 1805320,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by gritsp (upstream#312, 2026-10-04), Apple M1 Pro, macOS 26.5.2, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, DXMT as the environment's mode, rated 5 of 5 after 47 minutes, recipes steam, vcrun2022. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXMT on the default engine r17 on an M1 Pro, with nothing named as off after three quarters of an hour. An Early Access game released in May 2026, Windows only on Steam. The anti-cheat map has no entry for it. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null,
+  "verified": null
+}

@@ -1,0 +1,29 @@
+{
+  "id": "deadlock",
+  "title": "Deadlock",
+  "steam_appid": 1422450,
+  "status": "reported-upstream",
+  "renderer": "dxmt",
+  "provenance": "DXMT changelog v0.73 (github.com/3Shain/dxmt/releases) playX18 (upstream#243, 2026-09-28): rated 4, playable with minor issues, Apple M5 Pro, macOS 27.0, DXMT, a full standard match played; engine and KLYC-Box version not stated.",
+  "notes": "MetalFX temporal scaler output fixed A report has a full standard match playable on DXMT on an M5 Pro, with two costs: about ten minutes of shader compilation before the game stops stuttering, and audio crackle, which that player fixed by setting the Mac's output to 88.2 kHz in Audio MIDI Setup.",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "VAC"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  },
+  "knownIssues": [
+    {
+      "symptom": "Audio crackles (reported in the main hub on an M5 MacBook Air, upstream#187, and in matches on an M5 Pro, upstream#243).",
+      "cause": "not established. 48 kHz output changed nothing for the first reporter, and the crackle does not follow the frame time, so it sits in the audio path rather than a stall.",
+      "fix": "reported working by one player, not verified here: set the Mac's output to 88.2 kHz in Audio MIDI Setup (Applications, Utilities), then restart the game."
+    },
+    {
+      "symptom": "Stutter for the first minutes of a match (reported on an M5 Pro, DXMT).",
+      "cause": "shader compilation, per the reporter.",
+      "fix": "none needed, it settles after about ten minutes."
+    }
+  ]
+}

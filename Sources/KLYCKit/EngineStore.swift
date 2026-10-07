@@ -1,0 +1,644 @@
+import CryptoKit
+import Foundation
+
+public enum KLYCError: Error, CustomStringConvertible {
+    case checksumMismatch(file: String, expected: String, actual: String)
+    case processFailed(command: String, status: Int32, output: String)
+    case missing(String)
+    case invalid(String)
+    /// Wine's own DLLs are gone from an installed engine, so nothing Windows can start in it
+    /// (upstream#151, #153: an antivirus quarantine emptying parts of KLYC-Box's folder).
+    case engineDamaged(engine: String, files: [String])
+    /// A message already written for the user. Carries no prefix, so it reads as a sentence
+    /// rather than as a category the reader has to decode.
+    case failed(String)
+
+    public var description: String {
+        switch self {
+        case let .checksumMismatch(file, expected, actual):
+            return "checksum mismatch for \(file): expected \(expected), got \(actual)"
+        case let .processFailed(command, status, output):
+            return "\(command) exited with \(status)\n\(output)"
+        case let .engineDamaged(engine, files):
+            return "engine \(engine) is missing Wine's own \(files.joined(separator: ", "))"
+        case let .missing(what): return "missing: \(what)"
+        case let .invalid(what): return "invalid: \(what)"
+        case let .failed(message): return message
+        }
+    }
+}
+
+/// Progress callback: (component name, bytes received, total bytes or nil).
+public typealias DownloadProgress = @Sendable (String, Int64, Int64?) -> Void
+
+/// Downloads, verifies and lays out engines from manifests.
+///
+/// Installed layout: `engines/<id>/{engine, frameworks, renderers/<name>/..., manifest.json}`
+public struct EngineStore: Sendable {
+    public let paths: KLYCPaths
+
+    public init(paths: KLYCPaths = KLYCPaths()) { self.paths = paths }
+
+    // MARK: Query
+
+    public func installedEngines() throws -> [InstalledEngine] {
+        guard FileManager.default.fileExists(atPath: paths.engines.path) else { return [] }
+        let dirs = try FileManager.default.contentsOfDirectory(at: paths.engines, includingPropertiesForKeys: nil)
+        return dirs.compactMap { dir in
+            let manifest = dir.appending(path: "manifest.json")
+            guard let m = try? EngineManifest.load(from: manifest) else { return nil }
+            try? linkRuntime(dir)   // heals broken runtime links from pre-0.7.9 installs
+            return InstalledEngine(manifest: m, root: dir)
+        }.sorted { $0.manifest.id < $1.manifest.id }
+    }
+
+    /// The engine to use by default: the one the bundled manifest names when it is installed,
+    /// else the newest installed. Newest is the highest id under numeric-aware ordering, so
+    /// `…-r10` beats `…-r9` and `…-r2`. After an engine update two engines coexist, and the
+    /// CLI, which has no bundled manifest, created bottles on the old one while the app used
+    /// the new one (found 2026-09-04: a bottle created from the CLI ran r0 next to the app's r1).
+    public static func defaultEngine(installed: [InstalledEngine], bundledID: String?) -> InstalledEngine? {
+        installed.first { $0.id == bundledID }
+            ?? installed.max { $0.id.compare($1.id, options: .numeric) == .orderedAscending }
+    }
+
+    /// Whether an engine update may apply itself without a click: only when the Wine build is the
+    /// same (a component-only update, r1's MoltenVK or r2's timestamp shim), so no environment is
+    /// re-run and nothing can regress. Users kept appearing on old engines because the update
+    /// needed a click (#61's reporter was on r0 with 0.8.3; ux-plan item 9).
+    public static func autoUpdateAllowed(from installed: EngineManifest, to update: EngineManifest) -> Bool {
+        !EngineManifest.needsPrefixRefresh(from: installed, to: update)
+    }
+
+    /// Engines nothing references any more: not the default, not the engine of any bottle, and
+    /// not one the app still offers (`keep`: the bundled manifests, so an engine someone
+    /// downloaded for rollback survives the next update even with no bottle on it right now).
+    /// An engine update never removes an engine a bottle still runs on; a bottle keeps its
+    /// engine until its owner switches it (per-bottle choice, not migration).
+    public static func unreferencedEngines(installed: [InstalledEngine], referencedIDs: Set<String>, defaultID: String?, keep: Set<String> = []) -> [InstalledEngine] {
+        installed.filter { $0.id != defaultID && !referencedIDs.contains($0.id) && !keep.contains($0.id) }
+    }
+
+    /// Which licences a newly installed engine records as accepted: the ones asked for, plus any
+    /// already accepted on an engine installed here. Same id means the same licence text, so a
+    /// second engine carrying the same D3DMetal does not ask again. Not carrying them left an
+    /// engine that has D3DMetal but will not serve it, so a bottle set to Apple's DirectX 12
+    /// silently fell back on every launch with nothing obviously wrong (upstream#61, reproduced
+    /// here 2026-09-09 when a fresh install of r5 dropped the acceptance made on r4).
+    public static func acceptances(requested: Set<String>, installed: [InstalledEngine]) -> [String] {
+        Array(requested.union(installed.flatMap { $0.manifest.acceptedLicenses ?? [] })).sorted()
+    }
+
+    /// Whether an engine update may move a bottle onto `fresh` without re-running the Windows
+    /// first boot. The question is about the bottle's OWN engine: comparing the previous default
+    /// instead walked bottles across Wine builds whenever the default's own step was
+    /// component-only (2026-09-09, a 0.8.9 build moved Wine 11 bottles onto its Wine 10 default
+    /// because r1 to r2 was same-Wine, and their prefixes are a different format).
+    /// A bottle whose engine is not installed here returns false: this build cannot tell.
+    ///
+    /// Same Wine is not enough on its own: the move must also keep what the bottle's engine
+    /// offers. The GPTK 4 line (r6, r12, r14) shares the default line's Wine build and adds Apple's
+    /// D3DMetal 4, and 0.10.0's update walked those bottles onto the default engine, taking
+    /// D3DMetal 4 away without a word. `shipped` names every component this app still ships in any
+    /// of its manifests: one the bottle's engine has and `fresh` lacks holds the bottle back, unless
+    /// no manifest ships it any more (lsfg, withdrawn at its author's request, must not keep r7 and
+    /// r9 bottles off every later engine).
+    public static func canMoveBottle(on bottleEngine: EngineManifest?, to fresh: EngineManifest, shipped: Set<String>? = nil) -> Bool {
+        guard let bottleEngine, !EngineManifest.needsPrefixRefresh(from: bottleEngine, to: fresh) else { return false }
+        return componentsLost(from: bottleEngine, to: fresh, shipped: shipped).isEmpty
+    }
+
+    /// The components a move from `old` to `new` would take away, among those still shipped.
+    public static func componentsLost(from old: EngineManifest, to new: EngineManifest, shipped: Set<String>?) -> [String] {
+        guard let shipped else { return [] }
+        return old.components.keys.filter { shipped.contains($0) && new.components[$0] == nil }.sorted()
+    }
+
+    /// Where a bottle the default engine's update left behind should go instead: among `known`,
+    /// a later revision of the bottle's own engine line that runs on this macOS and takes the
+    /// bottle there without a first boot and without losing a shipped component. Of those, the
+    /// one adding the fewest components (the same variant, not a bigger one: the default line and
+    /// the GPTK 4 line share revision numbers), then the newest. A GPTK 4 bottle on r14 gets r16
+    /// this way when the default moves from r13 to r15, and an r13 bottle would get r15, not r16.
+    public static func successor(for bottleEngine: EngineManifest, among known: [EngineManifest],
+                                 shipped: Set<String>, macOS: String = EngineManifest.currentMacOS) -> EngineManifest? {
+        let candidates = known.filter { m in
+            m.id != bottleEngine.id
+                && EngineManifest.isAtOrAfter(current: m.id, wanted: bottleEngine.id)
+                && m.runs(onMacOS: macOS)
+                && canMoveBottle(on: bottleEngine, to: m, shipped: shipped)
+        }
+        func added(_ m: EngineManifest) -> Int { m.components.keys.filter { bottleEngine.components[$0] == nil }.count }
+        return candidates.min { a, b in
+            if added(a) != added(b) { return added(a) < added(b) }
+            return a.id.compare(b.id, options: .numeric) == .orderedDescending
+        }
+    }
+
+    /// The one engine an update may delete: the default it just superseded, and only when no
+    /// bottle is left on it. Everything else stays, including an engine this build does not
+    /// recognise, because a newer KLYC-Box may have installed it and removing it both discards a
+    /// large download and strands the bottles that use it.
+    public static func engineToRemoveAfterUpdate(oldID: String, freshID: String,
+                                                 referencedIDs: Set<String>,
+                                                 installed: [InstalledEngine]) -> InstalledEngine? {
+        guard oldID != freshID, !referencedIDs.contains(oldID) else { return nil }
+        return installed.first { $0.id == oldID }
+    }
+
+    /// The engine to offer when a program fails on `currentID`: the default engine when the
+    /// bottle is not on it (the newer one, usually), else the newest other installed engine.
+    /// nil with a single engine installed.
+    public static func alternateEngine(for currentID: String, installed: [InstalledEngine], defaultID: String?) -> InstalledEngine? {
+        if let d = installed.first(where: { $0.id == defaultID }), d.id != currentID { return d }
+        return installed.filter { $0.id != currentID }
+            .max { $0.id.compare($1.id, options: .numeric) == .orderedAscending }
+    }
+
+    /// One row per engine the app can put a bottle on: every installed engine, then every
+    /// bundled manifest that is not installed yet (it downloads when chosen). Newest first
+    /// within each group, by numeric-aware id order. When the bottle's own engine is in
+    /// neither list (its directory is gone), it is appended as a `missing` row so the picker
+    /// still shows what the bottle is on instead of a blank selection.
+    public struct OfferedEngine: Equatable, Sendable {
+        public let id: String
+        public let installed: Bool
+        public let missing: Bool
+        public init(id: String, installed: Bool, missing: Bool = false) { self.id = id; self.installed = installed; self.missing = missing }
+    }
+    public static func offeredEngines(installed: [InstalledEngine], known: [EngineManifest], current: String? = nil,
+                                      macOS: String = EngineManifest.currentMacOS) -> [OfferedEngine] {
+        let newestFirst: (String, String) -> Bool = { $0.compare($1, options: .numeric) == .orderedDescending }
+        let have = installed.sorted { newestFirst($0.id, $1.id) }.map { OfferedEngine(id: $0.id, installed: true) }
+        let ids = Set(have.map(\.id))
+        // A manifest with a macOS floor above this Mac is not offered: it would download and
+        // then run untested (r6's D3DMetal was measured on 27 only). Installed engines stay listed.
+        let more = known.filter { !ids.contains($0.id) && $0.runs(onMacOS: macOS) }.sorted { newestFirst($0.id, $1.id) }
+            .map { OfferedEngine(id: $0.id, installed: false) }
+        var rows = have + more
+        if let current, !rows.contains(where: { $0.id == current }) { rows.append(OfferedEngine(id: current, installed: false, missing: true)) }
+        return rows
+    }
+
+    public func engine(_ id: String) throws -> InstalledEngine {
+        let root = paths.engine(id)
+        let m = try EngineManifest.load(from: root.appending(path: "manifest.json"))
+        try? linkRuntime(root)      // heals broken runtime links from pre-0.7.9 installs
+        return InstalledEngine(manifest: m, root: root)
+    }
+
+    /// Copies facts a newer bundled manifest states about an engine into the installed copy of
+    /// that engine's manifest, so an engine installed before the fact was known behaves as the
+    /// app now knows it should (the r11 and r12 Direct3D 9 rule, upstream#198). Only fields the
+    /// installed manifest does not set are written; returns the ids updated.
+    @discardableResult
+    public func adoptKnownFacts(known: [EngineManifest]) -> [String] {
+        var updated: [String] = []
+        for engine in (try? installedEngines()) ?? [] {
+            guard let fact = known.first(where: { $0.id == engine.id }) else { continue }
+            var m = engine.manifest
+            var changed = false
+            if m.direct3D9 == nil, let d9 = fact.direct3D9 { m.direct3D9 = d9; changed = true }
+            if m.appDefaults == nil, let defaults = fact.appDefaults { m.appDefaults = defaults; changed = true }
+            guard changed else { continue }
+            if (try? m.save(to: engine.root.appending(path: "manifest.json"))) != nil { updated.append(engine.id) }
+        }
+        return updated
+    }
+
+    // MARK: Install
+
+    /// Installs every component of `manifest`. Optional components are skipped unless their
+    /// `acceptance` id is in `accepted` (or they have no acceptance requirement and `includeOptional`).
+    public func install(
+        _ manifest: EngineManifest,
+        accepted: Set<String> = [],
+        includeOptional: Bool = true,
+        progress: DownloadProgress? = nil
+    ) async throws -> InstalledEngine {
+        try paths.ensure()
+        let root = paths.engine(manifest.id)
+        let staging = paths.engines.appending(path: ".\(manifest.id).partial", directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: staging)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+
+        for (name, component) in manifest.orderedComponents {
+            // A Stop between components, or during unpack, ends the install here rather than
+            // finishing with "Engine ready" behind the user's back.
+            try Task.checkCancellation()
+            if component.isOptional {
+                if let acceptance = component.acceptance, !accepted.contains(acceptance) { continue }
+                if component.acceptance == nil, !includeOptional { continue }
+            }
+            let archive = try await download(component, name: name, progress: progress)
+            try extract(archive, component: component, name: name, into: staging)
+        }
+
+        // A licence the owner already accepted on another installed engine carries over. It is the
+        // same licence text under the same id, and not carrying it leaves an engine that has
+        // D3DMetal but will not serve it, so a bottle set to Apple's DirectX 12 silently falls back
+        // on every launch with nothing obviously wrong (upstream#61, and again here 2026-09-09 when
+        // a fresh install of r5 dropped the acceptance made on r4). updateEngine() already gathered
+        // acceptances this way; doing it here covers every path, including first run and the CLI.
+        var saved = manifest
+        saved.acceptedLicenses = Self.acceptances(requested: accepted, installed: (try? installedEngines()) ?? [])
+        try saved.save(to: staging.appending(path: "manifest.json"))
+        try linkRuntime(staging)
+        // The unpacked tree must be a whole engine before it replaces anything: an archive that
+        // unpacked short (a full disk, a file the archive lacks) used to install all the same and
+        // fail every launch afterwards. The archive was checksummed, so the fault
+        // is local; the staging tree goes and the next attempt starts over.
+        if manifest.components["wine"] != nil {
+            let missing = InstalledEngine(manifest: saved, root: staging).missingFiles
+            if !missing.isEmpty {
+                try? FileManager.default.removeItem(at: staging)
+                throw KLYCError.failed("The engine unpacked incomplete, \(missing.joined(separator: ", ")) missing. Check the free space on this disk and try again.")
+            }
+        }
+        try? FileManager.default.removeItem(at: root)
+        try FileManager.default.moveItem(at: staging, to: root)
+        try stripQuarantine(root)
+        return InstalledEngine(manifest: saved, root: root)
+    }
+
+    /// Records acceptance of a license for an already-installed engine.
+    public func accept(license id: String, engine: InstalledEngine) throws -> InstalledEngine {
+        var m = engine.manifest
+        var set = Set(m.acceptedLicenses ?? []); set.insert(id)
+        m.acceptedLicenses = set.sorted()
+        try m.save(to: engine.root.appending(path: "manifest.json"))
+        return InstalledEngine(manifest: m, root: engine.root)
+    }
+
+    /// Downloads to `downloads/<basename>` and verifies SHA-256. Reuses a cached file if it verifies.
+    ///
+    /// Resumable and retried: the bytes land in `<basename>.partial` as they arrive, a retry asks
+    /// for the rest with `Range` and `If-Range` on the ETag the first response carried, and up to
+    /// three attempts with a short backoff run before the user sees anything. The checksum at the
+    /// end stays the integrity backstop, so a bad resume can never install; a checksum failure
+    /// discards the partial so the next attempt starts clean. A 60 s no-data timeout keeps a
+    /// stalled connection from hanging forever.
+    public func download(_ component: EngineManifest.Component, name: String, progress: DownloadProgress? = nil) async throws -> URL {
+        try paths.ensure()
+        // verify local archives too
+        if component.url.isFileURL {
+            let actual = try sha256(of: component.url)
+            guard actual == component.sha256.lowercased() else {
+                throw KLYCError.checksumMismatch(file: component.url.lastPathComponent,
+                    expected: component.sha256, actual: actual)
+            }
+            return component.url
+        }
+        let dest = paths.downloads.appending(path: component.url.lastPathComponent)
+        if FileManager.default.fileExists(atPath: dest.path), try sha256(of: dest) == component.sha256.lowercased() {
+            return dest
+        }
+        // Named by checksum so two installs sharing a basename (or an asset that changed under
+        // the same name) never append into each other's file.
+        let partial = dest.appendingPathExtension("\(component.sha256.prefix(12)).partial")
+        let etagFile = dest.appendingPathExtension("\(component.sha256.prefix(12)).etag")
+        let expected = Int64(component.size ?? 0)
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 60
+        cfg.timeoutIntervalForResource = 3600
+        let session = URLSession(configuration: cfg)
+        defer { session.finishTasksAndInvalidate() }
+
+        var lastError: Error?
+        for attempt in 1...3 {
+            do {
+                try await fetch(component.url, into: partial, etagFile: etagFile, session: session) { received, total in
+                    progress?(name, received, total > 0 ? total : expected)
+                }
+                lastError = nil
+                break
+            } catch {
+                // A stop from the user is not a transient network failure: no retry, the
+                // partial file stays for the next attempt.
+                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled { throw error }
+                lastError = error
+                if attempt < 3 { try? await Task.sleep(for: .seconds([2, 5][attempt - 1])) }
+                try Task.checkCancellation()   // a Stop during the backoff must not start another attempt
+            }
+        }
+        if let lastError { throw lastError }
+
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: partial, to: dest)
+        try? FileManager.default.removeItem(at: etagFile)
+        // Partials of other versions of the same file are dead weight once this one verified.
+        if let siblings = try? FileManager.default.contentsOfDirectory(at: paths.downloads, includingPropertiesForKeys: nil) {
+            for f in siblings where f.lastPathComponent.hasPrefix(dest.lastPathComponent + ".") && (f.pathExtension == "partial" || f.pathExtension == "etag") {
+                try? FileManager.default.removeItem(at: f)
+            }
+        }
+        let actual = try sha256(of: dest)
+        guard actual == component.sha256.lowercased() else {
+            try? FileManager.default.removeItem(at: dest)
+            throw KLYCError.checksumMismatch(file: dest.lastPathComponent, expected: component.sha256, actual: actual)
+        }
+        progress?(name, expected > 0 ? expected : 1, expected > 0 ? expected : 1)
+        return dest
+    }
+
+    /// One attempt: append to `partial` from its current size when the server honours the range,
+    /// restart from zero when it does not (or the ETag changed). Streams to disk, reporting every
+    /// ~2 MB (the app once showed a blank sheet for a whole 270 MB download).
+    func fetch(_ url: URL, into partial: URL, etagFile: URL, session: URLSession,
+               onProgress: @escaping (Int64, Int64) -> Void) async throws {
+        let fm = FileManager.default
+        let have = (try? fm.attributesOfItem(atPath: partial.path)[.size] as? Int64) ?? 0
+        let etag = try? String(contentsOf: etagFile, encoding: .utf8)
+        var request = URLRequest(url: url)
+        if let range = DownloadResume.rangeHeaders(partialBytes: have, etag: etag) {
+            for (k, v) in range { request.setValue(v, forHTTPHeaderField: k) }
+        }
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw KLYCError.invalid("no HTTP response for \(url.absoluteString)") }
+        let decision = DownloadResume.decide(status: http.statusCode, partialBytes: have)
+        switch decision {
+        case .failed: throw KLYCError.invalid("HTTP \(http.statusCode) for \(url.absoluteString)")
+        case .restart: try? fm.removeItem(at: partial)
+        case .append: break
+        }
+        if let newTag = http.value(forHTTPHeaderField: "ETag") { try? newTag.write(to: etagFile, atomically: true, encoding: .utf8) }
+        if !fm.fileExists(atPath: partial.path) { fm.createFile(atPath: partial.path, contents: nil) }
+        let handle = try FileHandle(forWritingTo: partial)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        var written = decision == .append ? have : 0
+        // A chunked response reports -1; then the caller's manifest size drives the bar.
+        let total: Int64 = http.expectedContentLength < 0 ? 0 : (decision == .append ? have + http.expectedContentLength : http.expectedContentLength)
+        var buffer = Data(); buffer.reserveCapacity(1 << 20)
+        var lastReported: Int64 = written
+        for try await byte in bytes {
+            buffer.append(byte)
+            if buffer.count >= 1 << 20 {
+                try handle.write(contentsOf: buffer); written += Int64(buffer.count); buffer.removeAll(keepingCapacity: true)
+                if written - lastReported >= 2_000_000 { lastReported = written; onProgress(written, total) }
+            }
+        }
+        if !buffer.isEmpty { try handle.write(contentsOf: buffer); written += Int64(buffer.count) }
+        onProgress(written, total)
+    }
+
+    /// Non-nil, with the reason, when placing a directory at `dest` would take over a directory
+    /// that already has contents. A single-file target and an empty or absent directory are fine.
+    static func directoryCollision(at dest: URL, sourceIsDirectory: Bool) -> String? {
+        guard sourceIsDirectory else { return nil }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dest.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+        let count = (try? FileManager.default.contentsOfDirectory(atPath: dest.path).count) ?? 0
+        return count == 0 ? nil : "which already holds \(count) items"
+    }
+
+    func extract(_ archive: URL, component: EngineManifest.Component, name: String, into root: URL) throws {
+        guard let ex = component.extract else {
+            // Plain file (e.g. winetricks script): copy into tools/.
+            let tools = root.appending(path: "tools", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
+            let dest = tools.appending(path: archive.lastPathComponent)
+            try? FileManager.default.removeItem(at: dest)
+            try FileManager.default.copyItem(at: archive, to: dest)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+            return
+        }
+        let scratch = root.appending(path: ".extract-\(name)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        try Shell.run("/usr/bin/tar", ["-xf", archive.path, "-C", scratch.path])
+
+        let source: URL
+        if let sub = ex.subpath ?? ex.strip {
+            source = scratch.appending(path: sub)
+        } else {
+            source = scratch
+        }
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw KLYCError.missing("\(ex.subpath ?? ex.strip ?? "") inside \(archive.lastPathComponent)")
+        }
+        // `into` names a directory (a whole overlay) or a single file: a component that replaces
+        // one file another component installed, like a patched libMoltenVK.dylib on top of the
+        // runtime's. A file target leaves the rest of the parent directory alone.
+        var isDir: ObjCBool = false
+        _ = FileManager.default.fileExists(atPath: source.path, isDirectory: &isDir)
+        let dest = root.appending(path: ex.into, directoryHint: isDir.boolValue ? .isDirectory : .notDirectory)
+        if let why = Self.directoryCollision(at: dest, sourceIsDirectory: isDir.boolValue) {
+            // upstream#76: a directory component that lands on a directory another component
+            // filled used to replace it wholesale (the first r7 candidate lost its whole Wine
+            // tree this way and still reported "installed"). Refuse and say which.
+            throw KLYCError.invalid("component '\(name)' would replace \(ex.into), \(why). A component adds a directory of its own or replaces one file; to add a file to another component's directory, name that file as 'into'.")
+        }
+        try FileManager.default.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.moveItem(at: source, to: dest)
+        try? FileManager.default.removeItem(at: scratch)
+    }
+
+    /// Symlinks the Template's runtime dylibs into engine/lib so Wine binaries resolve
+    /// @loader_path/../lib/… and @rpath names without any DYLD_* environment (which SIP
+    /// strips when a restricted binary like /bin/sh sits in the exec chain — winetricks does).
+    ///
+    /// Targets MUST be relative: install() links inside the .partial staging dir and then
+    /// renames it into place, so absolute targets died with the staging path — every fresh
+    /// install shipped broken links until 0.7.9 (caught by the dotnet48 E2E gate; games
+    /// still ran because launches carry DYLD_FALLBACK_LIBRARY_PATH, winetricks did not).
+    /// A link with any other target is replaced, which also heals engines installed by
+    /// older versions when this runs again from installedEngines()/engine(_:).
+    func linkRuntime(_ root: URL) throws {
+        let fm = FileManager.default
+        let engineLib = root.appending(path: "engine/lib", directoryHint: .isDirectory)
+        guard fm.fileExists(atPath: engineLib.path) else { return }
+        var handled = Set<String>()
+        func link(_ name: String, to relativeTarget: String) {
+            guard handled.insert(name).inserted else { return }   // first source dir wins, as before
+            let dest = engineLib.appending(path: name)
+            if let existing = try? fm.destinationOfSymbolicLink(atPath: dest.path) {
+                if existing == relativeTarget { return }
+                try? fm.removeItem(at: dest)      // absolute/staging target from a pre-0.7.9 install
+            } else if fm.fileExists(atPath: dest.path) {
+                return                            // a real file — leave it alone
+            }
+            try? fm.createSymbolicLink(atPath: dest.path, withDestinationPath: relativeTarget)
+        }
+        for sub in ["frameworks", "frameworks/GStreamer.framework/Versions/1.0/lib"] {
+            let dir = root.appending(path: sub, directoryHint: .isDirectory)
+            guard let entries = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for entry in entries where entry.pathExtension == "dylib" {
+                link(entry.lastPathComponent, to: "../../\(sub)/\(entry.lastPathComponent)")
+            }
+        }
+        // GStreamer.framework itself, for modules that reference it by framework path.
+        link("GStreamer.framework", to: "../../frameworks/GStreamer.framework")
+    }
+
+    func stripQuarantine(_ url: URL) throws {
+        try? Shell.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", url.path])
+    }
+
+    public func sha256(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+/// An engine that has been laid out on disk.
+public struct InstalledEngine: Sendable {
+    public let manifest: EngineManifest
+    public let root: URL
+
+    public var id: String { manifest.id }
+    /// Direct3D 9 stays with Wine's own Direct3D in the automatic modes on this engine (see
+    /// `EngineManifest.direct3D9`).
+    public var direct3D9UsesWined3d: Bool { manifest.direct3D9 == "wined3d" }
+    /// Short human name for UI ("Wine 10.0 (Sikarugir)" beats a manifest id).
+    public var displayName: String {
+        manifest.components["wine"]?.version ?? manifest.displayName
+    }
+    public var engineDir: URL { root.appending(path: "engine", directoryHint: .isDirectory) }
+    public var frameworksDir: URL { root.appending(path: "frameworks", directoryHint: .isDirectory) }
+    /// The library that keeps Wine's audio pulls under half a period, when the
+    /// engine ships it as a component. Bottle.environment inserts it into Wine's processes.
+    public var audioBufferLibrary: URL? {
+        let lib = frameworksDir.appending(path: "libhbaudiobuf.dylib")
+        return FileManager.default.fileExists(atPath: lib.path) ? lib : nil
+    }
+    public var renderersDir: URL { root.appending(path: "renderers", directoryHint: .isDirectory) }
+    public var wineBinary: URL { engineDir.appending(path: "bin/wine") }
+    public var wineserverBinary: URL { engineDir.appending(path: "bin/wineserver") }
+
+    /// Files no engine runs without: the Wine loader, its server, the kernel DLLs of both
+    /// halves and the Unix side of ntdll. An engine missing any of them fails every launch
+    /// with "could not load kernel32.dll" (upstream#118, an unpack that stopped early), so an
+    /// install refuses to finish without them and the app reinstalls its own when they are gone.
+    public static let requiredFiles = [
+        "engine/bin/wine", "engine/bin/wineserver",
+        "engine/lib/wine/x86_64-windows/kernel32.dll", "engine/lib/wine/x86_64-windows/ntdll.dll",
+        "engine/lib/wine/i386-windows/kernel32.dll", "engine/lib/wine/x86_64-unix/ntdll.so",
+    ]
+    /// Which of `requiredFiles` are absent, relative to the engine's root.
+    public var missingFiles: [String] {
+        Self.requiredFiles.filter { !FileManager.default.fileExists(atPath: root.appending(path: $0).path) }
+    }
+    public var isComplete: Bool { missingFiles.isEmpty }
+
+    /// resolves the shim directory and repairs the real-driver link; it touches the disk, so the app caches it per engine
+    public func resolveLsfgShimDir() -> URL? {
+        let dir = renderersDir.appending(path: "lsfg", directoryHint: .isDirectory)
+        let shim = dir.appending(path: "libMoltenVK.dylib")
+        guard (try? shim.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              FileManager.default.isReadableFile(atPath: shim.path) else { return nil }
+        // use a different filename to avoid loading the shim recursively
+        let fm = FileManager.default
+        let driver = frameworksDir.appending(path: "libMoltenVK.dylib")
+        guard (try? driver.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              fm.isReadableFile(atPath: driver.path) else { return nil }
+        let link = dir.appending(path: Self.lsfgRealDriverName)
+        let target = "../../frameworks/libMoltenVK.dylib"
+        let current = try? fm.destinationOfSymbolicLink(atPath: link.path)
+        // repair links without replacing regular files
+        if current != target && (current != nil || !fm.fileExists(atPath: link.path)) {
+            do {
+                if current != nil { try fm.removeItem(at: link) }
+                try fm.createSymbolicLink(atPath: link.path, withDestinationPath: target)
+            } catch { return nil }
+        }
+        guard fm.isReadableFile(atPath: link.path),
+              (try? link.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+              link.resolvingSymlinksInPath() != dir.appending(path: "libMoltenVK.dylib").resolvingSymlinksInPath() else { return nil }
+        return dir
+    }
+
+    /// alternate filename for the real driver
+    public static let lsfgRealDriverName = "libMoltenVK.real.dylib"
+    public var winetricks: URL? {
+        let t = root.appending(path: "tools/winetricks")
+        return FileManager.default.fileExists(atPath: t.path) ? t : nil
+    }
+
+    /// Renderer overlay directory: Gin's own `renderers/<name>` wins over the Template's `frameworks/renderer/<name>`.
+    /// Whether the engine carries a renderer at all, licence aside: D3DMetal ships inside the
+    /// runtime template and `rendererDir` hides it until the licence is accepted.
+    public func ships(_ name: String) -> Bool {
+        let own = renderersDir.appending(path: name, directoryHint: .isDirectory).appending(path: "wine")
+        let template = frameworksDir.appending(path: "renderer/\(name)", directoryHint: .isDirectory).appending(path: "wine")
+        return FileManager.default.fileExists(atPath: own.path) || FileManager.default.fileExists(atPath: template.path)
+    }
+
+    public func rendererDir(_ name: String) -> URL? {
+        if let gate = EngineManifest.gatedRenderers[name], !(manifest.acceptedLicenses ?? []).contains(gate) { return nil }
+        let own = renderersDir.appending(path: name, directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: own.appending(path: "wine").path) { return own }
+        let template = frameworksDir.appending(path: "renderer/\(name)", directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: template.appending(path: "wine").path) { return template }
+        return nil
+    }
+
+    /// The D3DMetal timestamp shim overlay, laid out for launch, or nil when the engine has none.
+    /// The shim's d3d12.dll cannot load the real one under its own name, so the real PE is laid out
+    /// beside the shim as apd12.dll ("Apple's d3d12"), with its Mach-O half symlinked as
+    /// x86_64-unix/apd12.so into the licensed D3DMetal overlay. The copy differs from Apple's file
+    /// in nine bytes: its internal export name, because Wine 10 tells builtin modules apart by file
+    /// name but CrossOver's Wine 11 by that internal name, and with it untouched the copy came back
+    /// as the shim itself (no DirectX 12 device at all, 2026-09-08). Idempotent, and redone when the
+    /// D3DMetal files change (an engine update replaces them).
+    public func timestampShimDir(d3dmetal: URL) -> URL? {
+        guard let shim = rendererDir("d3dmetal-tsshim") else { return nil }
+        let fm = FileManager.default
+        let realPE = d3dmetal.appending(path: "wine/x86_64-windows/d3d12.dll")
+        let realSO = d3dmetal.appending(path: "wine/x86_64-unix/d3d12.so")
+        let pe = shim.appending(path: "wine/x86_64-windows/\(Self.shimRealName).dll")
+        let so = shim.appending(path: "wine/x86_64-unix/\(Self.shimRealName).so")
+        do {
+            let realAttrs = try fm.attributesOfItem(atPath: realPE.path)
+            let current = (try? fm.attributesOfItem(atPath: pe.path))
+            let fresh = current != nil
+                && current?[.size] as? UInt64 == realAttrs[.size] as? UInt64
+                && ((current?[.modificationDate] as? Date) ?? .distantPast) >= ((realAttrs[.modificationDate] as? Date) ?? .distantPast)
+                && (try? PEExportName.read(Data(contentsOf: pe))) == "\(Self.shimRealName).dll"
+            if !fresh {
+                try? fm.removeItem(at: pe)
+                try PEExportName.patched(Data(contentsOf: realPE), to: "\(Self.shimRealName).dll").write(to: pe)
+            }
+            try fm.createDirectory(at: so.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if (try? fm.destinationOfSymbolicLink(atPath: so.path)) != realSO.path {
+                try? fm.removeItem(at: so)
+                try fm.createSymbolicLink(at: so, withDestinationURL: realSO)
+            }
+            // The 0.9.0 layout (a hard link under this name) is the one that collided.
+            for stale in ["wine/x86_64-windows/d3d12_d3dmetal.dll", "wine/x86_64-unix/d3d12_d3dmetal.so"] {
+                try? fm.removeItem(at: shim.appending(path: stale))
+            }
+            return shim
+        } catch {
+            return nil
+        }
+    }
+
+    /// Base name of the real D3DMetal d3d12 laid out beside the shim: a name of the same length as
+    /// "d3d12" so the export-name patch fits, and distinct enough to never match a DLL a game ships.
+    public static let shimRealName = "apd12"
+
+    public func wineVersion() throws -> String {
+        try Shell.capture(wineBinary.path, ["--version"], env: baseEnvironment()).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Environment every Wine process needs for this engine, before bottle/renderer settings.
+    public func baseEnvironment() -> [String: String] {
+        let fw = frameworksDir.path
+        var env: [String: String] = [
+            "DYLD_FALLBACK_LIBRARY_PATH": "\(fw):\(fw)/GStreamer.framework/Versions/1.0/lib",
+            "DYLD_FALLBACK_FRAMEWORK_PATH": fw,
+            "GST_PLUGIN_PATH": "\(fw)/GStreamer.framework/Versions/1.0/lib/gstreamer-1.0",
+        ]
+        for (k, v) in manifest.baseEnv ?? [:] {
+            env[k] = v.replacingOccurrences(of: "${frameworks}", with: fw)
+                       .replacingOccurrences(of: "${renderers}", with: renderersDir.path)
+        }
+        return env
+    }
+}

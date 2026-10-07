@@ -1,0 +1,29 @@
+{
+  "id": "grand-theft-auto-san-andreas",
+  "title": "Grand Theft Auto: San Andreas",
+  "steam_appid": 12120,
+  "status": "community",
+  "renderer": "wined3d",
+  "anticheat": null,
+  "provenance": "Reported by Michael-Liendo (upstream#283, 2026-10-02), Apple M4, macOS 27.0, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, Wine's Direct3D, rated 5 of 5 after 8 minutes once set up, recipe steam. Not verified by the maintainer.",
+  "notes": "The 2005 original, which Steam no longer sells (its store page says it is no longer available; Rockstar sells the Definitive Edition instead), so this row is for people who already own it. Reported playable on Wine's own Direct3D on the default engine after two changes: the game refuses to start without Wine's virtual desktop, and DXVK was very slow in the menus and in play where Wine's Direct3D ran well. Inside the virtual desktop window there is no real fullscreen. A DualSense controller worked after the two WineBus registry values that KLYC-Box's Controllers through SDL tweak sets. Nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "Fails to start with 'Cannot find 800x600x32 video mode' (reported on an M4, macOS 27.0, engine r17)",
+      "cause": "Not investigated here. The game asks for an 800x600 32-bit display mode at startup and gets none it accepts without a virtual desktop",
+      "fix": "Turn on Wine's virtual desktop for the game: under HKCU\\Software\\Wine\\Explorer set Desktop to Default, with a Desktops\\Default size matching the in-game resolution. The reporter did this by hand in the registry. There is no native fullscreen inside that window"
+    },
+    {
+      "symptom": "Very slow on DXVK, in the menus and in play (reported on an M4)",
+      "cause": "Not investigated here",
+      "fix": "Set the game's graphics mode to Wine's Direct3D (wined3d), which the reporter says runs well"
+    },
+    {
+      "symptom": "A DualSense controller is not seen by the game (reported on an M4)",
+      "cause": "Wine's controller driver reads the pad through the Mac's raw HID path as well as SDL, and some games only see it through SDL",
+      "fix": "Apply the Controllers through SDL tweak from the environment's recipes (it sets Enable SDL and DisableHidraw under HKCU\\Software\\Wine\\WineBus, the two values the reporter set by hand), then restart the environment"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

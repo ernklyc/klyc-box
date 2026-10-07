@@ -1,0 +1,858 @@
+import AppKit
+import KLYCKit
+import SwiftUI
+import UniformTypeIdentifiers
+
+// MARK: - Bottle screen
+
+struct BottleView: View {
+    @Environment(AppState.self) private var state
+    let bottle: Bottle
+
+    // epic-games is deliberately absent: its installer cannot pass its permission audit
+    // under Wine (issue #14) — the Epic path is "Connect Epic account" (Legendary) below,
+    // and showing an "Install Epic Games" tile above it contradicted that.
+    static let launcherMeta: [(id: String, symbol: String, short: String)] = [
+        ("steam", "gamecontroller.fill", "Steam"),
+    ]
+
+    @State private var showSettings = false
+    @State private var editingPin: Pin?
+
+    private var engine: InstalledEngine? { state.engine(for: bottle) }
+    /// Pins that aren't one of the known launchers (dropped .exe files, custom programs).
+    /// The filter itself lives in the Kit so the unified library shares one definition.
+    private var customPins: [Pin] {
+        bottle.settings.pins.filter { !LibraryIndex.isLauncherPin($0) }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 34) {
+                launchersSection
+                if !customPins.isEmpty { programsSection }
+                HStack(spacing: 6) {
+                    Button { state.chooseProgramToRun(in: bottle.name) } label: {
+                        Label(L("Run a Windows program…"), systemImage: "folder")
+                    }.buttonStyle(HBTextButtonStyle())
+                    Text(L("— or drop any .exe or .msi on this window")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, HB.Metric.margin)
+            .padding(.top, 18)
+            .padding(.bottom, 40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(BottleBackdrop())
+        .navigationTitle(bottle.name)
+        .navigationSubtitle(engine?.displayName ?? "")
+        .toolbar {
+            ToolbarItemGroup {
+                if state.busy { ProgressView().controlSize(.small) }
+                Button { showSettings = true } label: { Label(L("Environment settings"), systemImage: "slider.horizontal.3") }
+                    .help(L("Renderer, synchronization, Windows version…"))
+                Menu {
+                    Button(L("Show the Windows drive")) { NSWorkspace.shared.open(bottle.driveC) }
+                    Button(L("Uninstall Windows programs…")) { state.openUninstaller(in: bottle) }
+                    Button(L("Stop all processes")) { state.killBottle(bottle) }
+                } label: { Label(L("More"), systemImage: "ellipsis.circle") }
+            }
+        }
+        .sheet(isPresented: $showSettings) { BottleSettingsSheet(bottle: bottle).hbSheet() }
+        .sheet(item: $editingPin) { p in PinSettingsSheet(pin: p, bottle: bottle).hbSheet() }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                guard let url else { return }
+                if ["exe", "msi", "bat"].contains(url.pathExtension.lowercased()) {
+                    Task { @MainActor in state.pendingRunBottle = bottle.name; state.pendingRun = url }
+                } else {
+                    // Silently ignoring a drop reads as "nothing happened" (Reddit report) — say why.
+                    Task { @MainActor in
+                        state.errorMessage = String(format: L("'%@' isn't a Windows program. You can drop .exe, .msi or .bat files here."), url.lastPathComponent)
+                    }
+                }
+            }
+            return true
+        }
+    }
+
+    // MARK: Launchers
+
+    private var launchersSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HB.eyebrow(L("Launchers"))
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 108, maximum: 140), spacing: 12)], spacing: 12) {
+                // Steam only (Epic has its own connect button).
+                ForEach(Self.launcherMeta, id: \.id) { meta in
+                    if let recipe = AppState.recipe(meta.id) {
+                        let installed = bottle.settings.recipes.contains(meta.id)
+                        let pin = bottle.settings.pins.first { $0.name.lowercased().hasPrefix(meta.short.lowercased().prefix(5)) }
+                        LauncherTile(title: meta.short, symbol: meta.symbol, installed: installed, busy: state.busy,
+                                     blockedReason: recipe.blocked?.reason, flakyReason: recipe.flaky?.reason) {
+                            if installed, let pin { state.launch(pin: pin, in: bottle) }
+                            else { state.applyRecipe(meta.id, to: bottle) }
+                        }
+                        .contextMenu {
+                            if MacAppStub.existing(for: meta.short) != nil {
+                                Button(L("Remove the Mac app")) { state.removeMacApp(title: meta.short) }
+                            } else {
+                                Button(L("Make a Mac app…")) { state.makeMacApp(forLauncher: meta.id, short: meta.short) }
+                            }
+                            if installed, let pin {
+                                Button(L("Open")) { state.launch(pin: pin, in: bottle) }
+                                Button(L("Program settings…")) { editingPin = pin }
+                                Button(L("Remove from list"), role: .destructive) { state.removePin(pin, from: bottle) }
+                            }
+                        }
+                    }
+                }
+            }
+            Text(L("Kernel anti-cheat titles (Valorant, Fortnite, Destiny 2…) can’t work through Wine — check the compatibility database before big downloads."))
+                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                .padding(.top, 2)
+        }
+    }
+
+    // MARK: Custom programs
+
+    private var programsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HB.eyebrow(L("Programs"))
+            VStack(spacing: 1) {
+                ForEach(customPins) { pin in
+                    HStack {
+                        Image(systemName: "app.dashed").foregroundStyle(.secondary)
+                        Text(pin.name)
+                        if let r = pin.renderer { RendererBadge(renderer: r) }
+                        Spacer()
+                        Button(L("Run")) { state.launch(pin: pin, in: bottle) }
+                            .buttonStyle(HBCompactButtonStyle())
+                            .disabled(state.busy)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(HB.card)
+                    .help(pin.path)
+                    .contextMenu {
+                        Button(L("Program settings…")) { editingPin = pin }
+                        Menu(L("Renderer override")) {
+                            Button(L("Environment default")) { state.setPinRenderer(nil, pin: pin, in: bottle) }
+                            ForEach(Renderer.allCases, id: \.self) { r in
+                                Button(r.rawValue.uppercased()) { state.setPinRenderer(r, pin: pin, in: bottle) }
+                            }
+                        }
+                        Divider()
+                        Button(L("Remove from list"), role: .destructive) { state.removePin(pin, from: bottle) }
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(HB.cardStroke))
+        }
+    }
+}
+
+/// Subtle warm wash so the surface reads as KLYC-Box's, not a system window.
+/// A tiny deterministic generator, so the particles sit in the same place on every draw.
+extension View {
+    /// Liquid Glass on macOS 26 and later; a translucent material with a hairline before that.
+    @ViewBuilder
+    func hbGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            let glass: Glass = {
+                var g = Glass.regular
+                if let tint { g = g.tint(tint) }
+                return interactive ? g.interactive() : g
+            }()
+            self.glassEffect(glass, in: shape)
+        } else {
+            self.background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(HB.cardStroke))
+        }
+    }
+}
+
+// MARK: - Tiles
+
+struct LauncherTile: View {
+    let title: String
+    let symbol: String
+    let installed: Bool
+    let busy: Bool
+    var blockedReason: String? = nil
+    var flakyReason: String? = nil
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var blocked: Bool { blockedReason != nil && !installed }
+    private var flaky: Bool { flakyReason != nil && !installed && !blocked }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack(alignment: .bottomTrailing) {
+                    ZStack {
+                        Circle()
+                            .fill(installed
+                                  ? AnyShapeStyle(LinearGradient(colors: [HB.amber, HB.amberDeep], startPoint: .top, endPoint: .bottom))
+                                  : AnyShapeStyle(HB.card))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: symbol)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(installed ? Color.white : .secondary)
+                    }
+                    if !installed {
+                        ZStack {
+                            Circle().fill(HB.ground).frame(width: 17, height: 17)
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(HB.amber)
+                        }
+                        .offset(x: 3, y: 3)
+                    }
+                }
+                Text(title).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+                Text(installed ? L("Open") : (blocked ? L("Blocked") : (flaky ? L("Flaky") : L("Install"))))
+                    .font(.system(size: 9.5).monospaced())
+                    .foregroundStyle(installed ? AnyShapeStyle(HB.good)
+                                     : (blocked ? AnyShapeStyle(HB.bad.opacity(0.85))
+                                        : (flaky ? AnyShapeStyle(HB.amber) : AnyShapeStyle(.tertiary))))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .hbGlass(RoundedRectangle(cornerRadius: 11), tint: hovering && !blocked ? HB.amber.opacity(0.25) : nil, interactive: !blocked)
+            .overlay(RoundedRectangle(cornerRadius: 11).stroke(hovering && !blocked ? HB.amber.opacity(0.4) : HB.cardStroke))
+            .opacity(blocked ? 0.55 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy || blocked)
+        .help(blockedReason.map { L("Blocked on the current engine: ") + $0 }
+              ?? flakyReason.map { L("Known issues: ") + $0 } ?? "")
+        .animation(HB.Motion.quick, value: hovering)
+        .onHover { hovering = $0 }
+    }
+}
+
+struct RendererBadge: View {
+    let renderer: Renderer
+    var body: some View {
+        Text(renderer.rawValue.uppercased())
+            .font(.caption2.monospaced())
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(.secondary.opacity(0.6)))
+    }
+}
+
+// MARK: - Settings sheet (the Form belongs here, not on the main surface)
+
+struct BottleSettingsSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    let bottle: Bottle
+    @State private var confirmDelete = false
+    @State private var showFrameGenInfo = false
+
+    /// small ⓘ next to a frame-generation control; the detail lives in the popover,
+    /// so "How frame generation works" stays about frame generation in general
+    private func infoIcon(_ text: String) -> some View {
+        InfoButton(text: L(text))
+    }
+    /// Live slider value while dragging; nil means "read the saved dpiScale". Applied on release
+    /// only, so dragging doesn't fire a wine registry write on every step.
+    @State private var dpiDraft: Double? = nil
+
+    /// What the Mac's display means for the Retina option: its size, and either the one change
+    /// advised or the cost of native pixels, in the numbers the player can weigh.
+    @ViewBuilder private var displayAdviceRow: some View {
+        if let screen = NSScreen.main {
+            let info = DisplayInfo(pointWidth: Int(screen.frame.width), pointHeight: Int(screen.frame.height), backingScale: Double(screen.backingScaleFactor))
+            let advice = DisplayAdvice.advice(for: info, retinaAt100: liveBottle.settings.retinaAt100)
+            VStack(alignment: .leading, spacing: 6) {
+                switch advice.kind {
+                case .standard:
+                    Text(String(format: L("Your display is %d × %d and not Retina, so there are no extra pixels to draw. Nothing to change here."), info.pixelWidth, info.pixelHeight))
+                case .standardOptionOn:
+                    Text(String(format: L("Your display is %d × %d and not Retina, so Retina resolution has nothing to add; it is safe to turn off."), info.pixelWidth, info.pixelHeight))
+                case .retina:
+                    Text(String(format: L("Your display is %d × %d pixels (Retina). Native resolution draws %.1f million pixels a frame instead of %.1f, about %.0f× the work: sharper, but heavy 3D games may run slower. Light games and sharp text gain most from it."),
+                                info.pixelWidth, info.pixelHeight, info.pixelMegapixels, info.pointMegapixels, advice.costFactor))
+                }
+                if advice.recommendedRetinaAt100 == false {
+                    Button(L("Turn it off")) { state.setDpi(currentDpi, retinaAt100: false, in: liveBottle) }.buttonStyle(HBCompactButtonStyle())
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var currentDpi: Int { (state.bottles.first { $0.name == bottle.name } ?? bottle).settings.dpiScale }
+    private var liveBottle: Bottle { state.bottles.first { $0.name == bottle.name } ?? bottle }
+    private var currentRenderer: Renderer { liveBottle.settings.renderer }
+    private var engine: InstalledEngine? { state.engine(for: liveBottle) }
+    private var d3dmetalAvailable: Bool { engine?.rendererDir("d3dmetal") != nil }
+    private var dlssAvailable: Bool { engine.map { liveBottle.supportsDLSS(engine: $0) } ?? false }
+    private var vkd3dAvailable: Bool { engine?.rendererDir("vkd3d") != nil }
+    private var d3dmetalPossible: Bool {
+        guard let engine else { return false }
+        return FileManager.default.fileExists(atPath: engine.frameworksDir.appending(path: "renderer/d3dmetal/wine").path)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(bottle.name).font(.title3.bold())
+                Text(engine?.displayName ?? "").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(L("Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+            Divider()
+            Form {
+                Section(L("Graphics")) {
+                    // Not the generic binding: picking a renderer here is an explicit choice,
+                    // which recipes must never clobber afterwards (#29).
+                    Picker(L("Renderer"), selection: Binding(
+                        get: { (state.bottles.first { $0.name == bottle.name } ?? bottle).settings.renderer },
+                        set: { newValue in
+                            var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+                            copy.settings.renderer = newValue
+                            copy.settings.rendererExplicit = true
+                            if let engine, !copy.supportsDLSS(engine: engine, renderer: newValue) {
+                                copy.settings.dlssEnabled = false
+                            }
+                            Task { @MainActor in state.updateAndConfirm(copy) }
+                        })) {
+                        Text(L("DXMT — D3D10/11 → Metal (default)")).tag(Renderer.dxmt)
+                        // Shown when selectable, and when it is the setting even though this
+                        // engine cannot run it: a picker that hides the current value reads as
+                        // empty, and the row below says what happens instead (#61).
+                        if d3dmetalAvailable || currentRenderer == .d3dmetal { Text(L("D3DMetal — D3D11/12, Apple")).tag(Renderer.d3dmetal) }
+                        Text(L("DXVK — D3D9/10/11 → Vulkan")).tag(Renderer.dxvk)
+                        if vkd3dAvailable || currentRenderer == .vkd3d { Text(L("vkd3d-proton — D3D12 → Vulkan (experimental)")).tag(Renderer.vkd3d) }
+                        Text(L("WineD3D — slow fallback")).tag(Renderer.wined3d)
+                    }
+                    Toggle(L("Enable DLSS (MetalFX)"), isOn: Binding(
+                        get: { dlssAvailable && liveBottle.settings.dlssEnabled },
+                        set: { enabled in
+                            var copy = liveBottle
+                            copy.settings.dlssEnabled = dlssAvailable && enabled
+                            Task { @MainActor in state.updateAndConfirm(copy) }
+                        }))
+                        .disabled(!dlssAvailable)
+                    Text(L("Lets games that support DLSS use the MetalFX translation in DXMT or D3DMetal. Turn DLSS on in the game's own graphics settings too. Stop and relaunch the environment after changing this."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    if !d3dmetalAvailable, currentRenderer == .d3dmetal, let engine, let why = Renderer.d3dmetal.unavailableReason(in: engine) {
+                        Text(String(format: L("Programs here start with %@ until this is resolved: %@"), GamePageCopy.plainName(Renderer.fallback(for: .d3dmetal, in: engine)), why))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !d3dmetalAvailable && d3dmetalPossible {
+                        HStack {
+                            Text(L("D3DMetal (needed for DirectX 12) requires accepting Apple’s Game Porting Toolkit license."))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button(L("Review license…")) {
+                                Task { @MainActor in
+                                    state.licenseEngine = engine
+                                    state.loadGPTKLicense()
+                                    state.showGPTKLicense = true
+                                }
+                            }.controlSize(.small)
+                        }
+                    }
+                    // only engines that ship the shim get the control
+                    if let engine, let shim = state.lsfgShimDirs[engine.id] {
+                        Picker(L("Frame generation (Lossless Scaling, beta)"), selection: Binding(
+                            get: { liveBottle.settings.frameGen },
+                            set: { newValue in
+                                let turnedOn = liveBottle.settings.frameGen <= 1 && newValue > 1
+                                var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+                                copy.settings.frameGen = newValue
+                                Task { @MainActor in state.updateAndConfirm(copy) }
+                                if turnedOn { showFrameGenInfo = true }
+                            })) {
+                            Text(L("Off")).tag(1)
+                            Text("2×").tag(2)
+                            Text("3×").tag(3)
+                            Text("4×").tag(4)
+                        }
+                        HStack(spacing: 6) {
+                            Button(L("How frame generation works")) { showFrameGenInfo = true }
+                                .buttonStyle(HBTextButtonStyle()).controlSize(.small)
+                            infoIcon("How many frames are shown for each frame the game renders. 2× puts one generated frame between every pair of real frames, 4× puts three. Higher multipliers need more GPU headroom and only pay off on a display fast enough to show them.")
+                        }
+                        if liveBottle.settings.frameGen > 1 {
+                            HStack(spacing: 6) {
+                                Toggle(L("Adaptive pacing"), isOn: binding(\.frameGenAdaptive))
+                                infoIcon("Measures the game's own frame rate and inserts only as many frames as it takes to fill the display, up to the multiplier: a 45 fps game gets one extra frame every other frame, and a game already at the refresh rate is left alone.")
+                            }
+                            HStack(spacing: 6) {
+                                Toggle(L("Performance mode"), isOn: binding(\.frameGenPerformance))
+                                infoIcon("Uses Lossless Scaling's cheaper shader set: noticeably less GPU time per generated frame, with slightly softer interpolation around fast motion.")
+                            }
+                            HStack(spacing: 6) {
+                                Toggle(L("Force vsync"), isOn: binding(\.frameGenForceVsync))
+                                if liveBottle.settings.frameGenForceVsync {
+                                    infoIcon("Paces generated frames to the display. Turn it off to let the game present at its own rate instead.")
+                                } else {
+                                    InfoButton(text: L("The game presents at its own rate. Frames beyond the display's refresh rate are discarded and the image can tear, so this only helps above 60 Hz."), warning: true)
+                                }
+                            }
+                            HStack(spacing: 6) {
+                                Picker(L("Motion estimation resolution"), selection: binding(\.frameGenFlowScale)) {
+                                    Text("100%").tag(100)
+                                    Text("75%").tag(75)
+                                    Text("50%").tag(50)
+                                }
+                                infoIcon("Resolution used to estimate motion, as a percentage of the frame. Lower is cheaper and can help a GPU-bound game, at the cost of accuracy around small or fast-moving detail.")
+                            }
+                        }
+                        switch liveBottle.frameGenStatus(shim: shim) {
+                        case .unavailable(let why):
+                            Text(String(format: L("Frame generation stays off: %@"), L(why)))
+                                .font(.caption).foregroundStyle(.secondary)
+                        case .active:
+                            Text(L("After changing this, stop the environment and relaunch so a Steam game picks it up."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        case .off:
+                            EmptyView()
+                        }
+                        // The shader DLL is a plain file, so a copy of Lossless Scaling in another Wine
+                        // setup (CrossOver, a second account) serves as well as one installed here. A
+                        // picker beats typing LSFGM_DLL_PATH by hand (discussion #196).
+                        if liveBottle.settings.frameGen > 1 {
+                            HStack(spacing: 8) {
+                                Button(L("Use a Lossless Scaling DLL from elsewhere…")) { chooseFrameGenDLL() }
+                                    .controlSize(.small)
+                                if let override = liveBottle.settings.environment["LSFGM_DLL_PATH"], !override.isEmpty {
+                                    Text(override).font(.caption).foregroundStyle(.secondary)
+                                        .lineLimit(1).truncationMode(.middle)
+                                    Button(L("Clear")) { setFrameGenDLL(nil) }.buttonStyle(HBTextButtonStyle()).controlSize(.small)
+                                }
+                            }
+                        }
+                    }
+                    Toggle(L("Metal performance HUD"), isOn: binding(\.metalHUD))
+                    Toggle(L("DXVK async shader compilation (experimental — can skip draws while a shader compiles)"), isOn: binding(\.dxvkAsync))
+                    Picker(L("Frame rate cap"), selection: binding(\.fpsCap)) {
+                        ForEach(BottleSettings.fpsCapChoices(displayHz: NSScreen.main?.maximumFramesPerSecond, current: liveBottle.settings.fpsCap), id: \.self) { n in
+                            Text(n == 0 ? L("Uncapped") : "\(n) fps").tag(n)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L("Display scaling"))
+                            Spacer()
+                            Text("\(Int(((dpiDraft ?? Double(currentDpi)) / 96 * 100).rounded()))%")
+                                .foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Slider(
+                            value: Binding(get: { dpiDraft ?? Double(currentDpi) }, set: { dpiDraft = $0 }),
+                            in: 96...240, step: 24,
+                            onEditingChanged: { editing in
+                                if !editing, let v = dpiDraft {
+                                    state.setDpi(Int(v.rounded()), in: state.bottles.first { $0.name == bottle.name } ?? bottle)
+                                    dpiDraft = nil
+                                }
+                            })
+                    }
+                    Text(L("Scales the Windows desktop and UI, 100% to 250%. Launchers and desktop apps follow it; many full-screen games set their own resolution and won't. Above 100% uses native Retina pixels, so heavy games may run slower."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    displayAdviceRow
+                    // Above 100% Retina pixels are always on, so the choice only exists at 100%.
+                    if Int((dpiDraft ?? Double(currentDpi)).rounded()) <= 96 {
+                        Toggle(L("Retina resolution at 100%"), isOn: Binding(
+                            get: { liveBottle.settings.retinaAt100 },
+                            set: { state.setDpi(currentDpi, retinaAt100: $0, in: liveBottle) }))
+                        Text(L("For a game whose own interface grows with the scaling. Games get the display's full pixel count with nothing scaled up, while Windows apps like Steam draw at half size."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section(L("Compatibility")) {
+                    Picker(L("Synchronization"), selection: binding(\.sync)) {
+                        Text(L("msync — fastest for most games")).tag(SyncMode.msync)
+                        Text(L("None — required for Steam/CEF launchers")).tag(SyncMode.none)
+                        Text("esync").tag(SyncMode.esync)
+                    }
+                    Picker(L("Windows version"), selection: binding(\.windowsVersion)) {
+                        ForEach(WindowsVersion.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    Toggle(L("Advertise AVX to games (Rosetta)"), isOn: binding(\.advertiseAVX))
+                    Toggle(L("Use ⌘C / ⌘V inside Windows apps"), isOn: binding(\.commandIsControl))
+                    Text(L("Maps the Command keys to Ctrl, so Mac copy and paste work in Steam and games. Option becomes Alt so Alt-based bindings keep working. Off = Wine's default, where Command acts as Alt."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(L("Games run with the environment’s sync (msync is fastest). Opening the Steam window restarts Windows processes with sync off — its interface needs it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Toggle(L("Keep game files inside this environment"), isOn: Binding(
+                        get: { (state.bottles.first { $0.name == bottle.name } ?? bottle).settings.keepFilesInside },
+                        set: { on in state.setKeepFilesInside(on, for: bottle) }))
+                    Text(L("On, the Windows Documents folder lives inside this environment, so games that save there (FromSoftware, Bandai Namco, the Sims and others) no longer write into your Mac's Documents. Files already in your Mac's Documents stay there and the game starts fresh here. Off again keeps the environment's folder as “Documents (environment)”. Saves kept inside go with the environment when you delete it."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section(L("Advanced")) {
+                    let offered = state.offeredEngines(for: state.bottles.first { $0.name == bottle.name } ?? bottle)
+                    if offered.count > 1 {
+                        Picker(L("Engine"), selection: Binding(
+                            get: { (state.bottles.first { $0.name == bottle.name } ?? bottle).settings.engineID },
+                            set: { newID in
+                                let current = state.bottles.first { $0.name == bottle.name } ?? bottle
+                                guard newID != current.settings.engineID else { return }
+                                dismiss()   // the move runs in the busy sheet; two sheets on one window do not stack
+                                state.moveBottle(current, toEngineID: newID)
+                            })) {
+                            ForEach(offered, id: \.id) { e in
+                                Text(verbatim: e.missing ? "\(e.id) (\(L("missing")))" : e.installed ? e.id : "\(e.id) (\(L("download")))").tag(e.id)
+                            }
+                        }
+                        .disabled(state.busy)
+                        Text(L("Environments never change engine on their own. Switching re-runs the Windows setup when the Wine build differs; switching back is the same step. An engine marked download is fetched first."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    TextField(L("DLL overrides"), text: binding(\.dllOverrides), prompt: Text(verbatim: "version=n,b;winmm=n,b"))
+                        .font(.body.monospaced())
+                    Text(L("Extra Wine DLL overrides for this environment, semicolon separated. Mods like Cyber Engine Tweaks need version=n,b."))
+                        .font(.caption).foregroundStyle(.secondary)
+                    let ignoredDlls = WineRunner.dllOverridesIgnored(binding(\.dllOverrides).wrappedValue)
+                    if !ignoredDlls.isEmpty {
+                        Text(L("Ignored, not name=n,b: ") + ignoredDlls.joined(separator: ", ")).font(.caption).foregroundStyle(HB.amber)
+                    }
+                    EnvEditor(bottle: bottle)
+                    Text(L("Environment variables, one KEY=VALUE per line. Applied to everything launched in this environment."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                let tweaks = AppState.tweakRecipes()
+                if !tweaks.isEmpty {
+                    Section(L("Dependencies")) {
+                        ForEach(tweaks, id: \.id) { r in
+                            HStack {
+                                Text(r.title)
+                                Spacer()
+                                let live = state.bottles.first { $0.name == bottle.name } ?? bottle
+                                if live.settings.recipes.contains(r.id) || state.tweakIsInstalled(r, in: live) {
+                                    Label(L("Installed"), systemImage: "checkmark.circle.fill").foregroundStyle(.green).labelStyle(.titleAndIcon)
+                                } else {
+                                    Button(L("Install")) {
+                                        state.applyRecipe(r.id, to: state.bottles.first { $0.name == bottle.name } ?? bottle)
+                                    }.controlSize(.small)
+                                }
+                            }
+                        }
+                        Text(L("Windows runtimes some games need. Install them when a game complains about a missing runtime or refuses to start."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Button(L("Delete environment…"), role: .destructive) { confirmDelete = true }
+                }
+            }
+            .formStyle(.grouped)
+        }
+        .frame(width: 560, height: 560)
+        .confirmationDialog(UserFolders.hasFilesInside(driveC: bottle.driveC)
+                            ? L("Delete this environment? Its Windows drive and everything installed in it are removed, including the game saves kept in its Documents folder.")
+                            : L("Delete this environment? Its Windows drive and everything installed in it are removed."),
+                            isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button(L("Delete"), role: .destructive) { dismiss(); state.deleteBottle(bottle.name) }
+            Button(L("Cancel"), role: .cancel) {}
+        }
+        .alert(L("About frame generation"), isPresented: $showFrameGenInfo) {
+            Button(L("Got it"), role: .cancel) {}
+        } message: {
+            Text(L("Lossless Scaling inserts interpolated frames between the game's real frames to make motion look smoother.\n\nBy default the generated frames are paced to your display, so it never presents more than your screen's refresh rate. It therefore helps most when a game runs BELOW your refresh rate, for example a demanding game locked at 30 fps smoothed up to 60. On the built-in 60 Hz display a game already running above 60 is capped to 60 and feels worse, not better. It pays off on an external high-refresh monitor (120 Hz or more), where a 60 fps game becomes 120.\n\nIt also adds a little input lag, because a real frame is held back to interpolate.\n\nIt works with every graphics mode: DXVK and vkd3d-proton through Vulkan, DXMT and D3DMetal through Metal, and WineD3D on its own renderer, OpenGL or Vulkan.\n\nAfter changing any of these settings, stop the environment and relaunch so a Steam game picks up the new one.\n\nThis is a beta feature: some games may show artifacts, stutter or not start with it on. Turn it off if a game misbehaves.\n\nClick the ⓘ beside each setting to see what that one does."))
+        }
+    }
+
+    /// Picks lsfg-vk.dll wherever it lives and records it as the environment's LSFGM_DLL_PATH,
+    /// the same variable the environment editor accepts by hand.
+    private func chooseFrameGenDLL() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if let dll = UTType(filenameExtension: "dll") { panel.allowedContentTypes = [dll] }
+        panel.message = L("Choose lsfg-vk.dll from a Lossless Scaling install on its lsfg-vk beta branch")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        setFrameGenDLL(url.path)
+    }
+
+    private func setFrameGenDLL(_ path: String?) {
+        var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+        if let path { copy.settings.environment["LSFGM_DLL_PATH"] = path }
+        else { copy.settings.environment.removeValue(forKey: "LSFGM_DLL_PATH") }
+        Task { @MainActor in state.updateAndConfirm(copy) }
+    }
+
+    private func binding<T>(_ keyPath: WritableKeyPath<BottleSettings, T>) -> Binding<T> {
+        Binding(
+            get: { (state.bottles.first { $0.name == bottle.name } ?? bottle).settings[keyPath: keyPath] },
+            set: { newValue in
+                var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+                copy.settings[keyPath: keyPath] = newValue
+                Task { @MainActor in state.updateAndConfirm(copy) }
+            })
+    }
+}
+
+// MARK: - Onboarding & license sheet
+
+struct OnboardingView: View {
+    @Environment(AppState.self) private var state
+
+    var body: some View {
+        ZStack {
+            BottleBackdrop()
+            VStack(spacing: 18) {
+                if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"), let img = NSImage(contentsOf: url) {
+                    Image(nsImage: img).resizable().frame(width: 104, height: 104)
+                        .shadow(color: HB.amber.opacity(0.35), radius: 18, y: 6)
+                } else {
+                    Image(systemName: "wineglass.fill").font(.system(size: 52)).foregroundStyle(.tint)
+                }
+                Text("KLYC-Box").font(.system(size: 36, weight: .heavy, design: .rounded))
+                Text(L("Play Windows games on your Mac."))
+                    .font(.title3).foregroundStyle(.secondary)
+                Button {
+                    state.getStarted()
+                } label: {
+                    Text(state.busy ? L("Setting up…") : L("Get started")).frame(minWidth: 190)
+                }
+                .buttonStyle(HBPrimaryButtonStyle())
+                .disabled(state.busy)
+                .padding(.top, 6)
+                Text(state.rosettaInstalled
+                     ? L("Nothing to choose. The download takes a few minutes on most connections.")
+                     : L("Nothing to choose. KLYC-Box installs Rosetta for you, then the download takes a few minutes."))
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
+                Spacer().frame(height: 30)
+                Text(L("KLYC-Box downloads its Wine engine from public releases: its own engine repository and Sikarugir. Every file is checked against a fixed SHA-256 digest."))
+                    .font(.caption).foregroundStyle(.tertiary)
+                Text(L("Wine LGPL · DXMT MIT · DXVK Zlib · engine builds by Sikarugir and the Highball project"))
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(40)
+        }
+    }
+}
+
+struct GPTKLicenseSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Apple Game Porting Toolkit — Software License Agreement").font(.headline)
+            ScrollView {
+                Text(state.gptkLicenseText)
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(width: 640, height: 380)
+            .background(.quaternary.opacity(0.4))
+            HStack {
+                Text(L("Non-commercial use only · no modification · Apple hardware only"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(L("Close")) { dismiss() }
+                if let engine = state.licenseEngine ?? state.defaultEngine ?? state.engines.first, engine.rendererDir("d3dmetal") == nil {
+                    Button(L("Accept & enable D3DMetal")) {
+                        state.acceptGPTK(engine: engine)
+                        dismiss()
+                    }.buttonStyle(HBPrimaryButtonStyle())
+                }
+            }
+        }
+        .padding(16)
+    }
+}
+
+
+struct EpicSignInSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    @State private var code = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: HB.Space.m) {
+            Text(L("Connect your Epic account")).font(.title2.bold())
+            Text(L("1. Open Epic's sign-in page and log in.\n2. The page ends by showing an authorizationCode.\n3. Paste that code here."))
+                .font(.callout).foregroundStyle(.secondary)
+            Button(L("Open Epic sign-in page")) { NSWorkspace.shared.open(EpicStore.loginURL) }
+            TextField(L("authorizationCode"), text: $code).textFieldStyle(.roundedBorder).frame(width: 340)
+            Text(L("Your password never touches KLYC-Box. The code is single use and connects through Legendary, the open source Epic client the Heroic launcher uses."))
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: 360, alignment: .leading)
+            HStack {
+                Spacer()
+                Button(L("Cancel")) { dismiss() }
+                Button(L("Connect")) {
+                    dismiss()
+                    state.epicSignIn(code: code.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(code.trimmingCharacters(in: .whitespaces).count < 8)
+            }
+        }
+        .padding(24)
+    }
+}
+
+
+/// Per-program settings: launch arguments, environment, renderer override in one place.
+struct PinSettingsSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    let bottle: Bottle
+    @State private var pin: Pin
+    @State private var argsText: String
+    @State private var envText: String
+
+    init(pin: Pin, bottle: Bottle) {
+        self.bottle = bottle
+        _pin = State(initialValue: pin)
+        _argsText = State(initialValue: ArgumentLine.join(pin.arguments))
+        _envText = State(initialValue: pin.environment.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }.joined(separator: "\n"))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: HB.Space.m) {
+            Text(pin.name).font(.title2.bold())
+            Text(pin.path).font(.caption.monospaced()).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("Launch arguments")).font(.callout.weight(.medium))
+                TextField(L("-dx11 -skiplauncher \"an argument with spaces\""), text: $argsText)
+                    .textFieldStyle(.roundedBorder).font(.body.monospaced())
+                Text(L("Passed to the program on every launch. Quote arguments that contain spaces."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L("Environment")).font(.callout.weight(.medium))
+                TextEditor(text: $envText)
+                    .font(.body.monospaced()).frame(height: 64)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                Text(L("One KEY=VALUE per line, applied only to this program."))
+                    .font(.caption).foregroundStyle(.secondary)
+                let lookalikes = EnvText.dllOverrideLookalikes(in: EnvText.parse(envText).environment)
+                if !lookalikes.isEmpty {
+                    Text(DllOverrideHint.text(for: lookalikes)).font(.caption).foregroundStyle(HB.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Picker(L("Renderer"), selection: $pin.renderer) {
+                Text(L("Environment default")).tag(Renderer?.none)
+                ForEach(Renderer.allCases, id: \.self) { r in
+                    Text(r.rawValue.uppercased()).tag(Renderer?.some(r))
+                }
+            }
+            .pickerStyle(.menu)
+            // The registry is the state for this one, so it applies as soon as it is toggled,
+            // not on Save: the same value a database fix writes.
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(L("Emulate display mode changes"), isOn: Binding(
+                    get: { state.displayModeEmulation(in: bottle, executable: pin.executableURL(driveC: bottle.driveC)) },
+                    set: { state.setDisplayModeEmulation($0, in: bottle, executable: pin.executableURL(driveC: bottle.driveC)) }))
+                    .toggleStyle(.checkbox)
+                Text(L("For a game that opens small, off-centre, or refuses its fullscreen mode. The Mac cannot switch its display for it, so Wine pretends and scales the picture instead. A fix from the database may have set this already."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button(L("Cancel")) { dismiss() }
+                Button(L("Save")) {
+                    pin.arguments = ArgumentLine.split(argsText)
+                    pin.environment = EnvText.parse(envText).environment
+                    state.updatePin(pin, in: bottle)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
+    }
+}
+
+/// Bottle environment editor: one KEY=VALUE per line, saved on every keystroke batch.
+struct EnvEditor: View {
+    @Environment(AppState.self) private var state
+    let bottle: Bottle
+    @State private var text: String = ""
+    @State private var ignored: [String] = []
+    @State private var lookalikes: [(key: String, value: String)] = []
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TextEditor(text: $text)
+                .font(.body.monospaced())
+                .frame(height: 72)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+            if !ignored.isEmpty {
+                Text(L("Ignored, not KEY=VALUE: ") + ignored.joined(separator: ", ")).font(.caption).foregroundStyle(HB.amber)
+            }
+            // A DLL override typed here as a variable never reaches Wine (upstream#202, #203).
+            if !lookalikes.isEmpty {
+                Text(DllOverrideHint.text(for: lookalikes)).font(.caption).foregroundStyle(HB.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(L("Move to DLL overrides")) {
+                    var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+                    copy.settings.adoptDllOverrideLookalikes()
+                    state.updateAndConfirm(copy)
+                    text = EnvText.text(for: copy.settings.environment)
+                }
+                .controlSize(.small)
+            }
+        }
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            let live = (state.bottles.first { $0.name == bottle.name } ?? bottle).settings.environment
+            text = EnvText.text(for: live)
+            lookalikes = EnvText.dllOverrideLookalikes(in: live)
+        }
+        .onChange(of: text) { _, newValue in
+            let parsed = EnvText.parse(newValue)
+            ignored = parsed.ignored
+            lookalikes = EnvText.dllOverrideLookalikes(in: parsed.environment)
+            var copy = state.bottles.first { $0.name == bottle.name } ?? bottle
+            guard copy.settings.environment != parsed.environment else { return }
+            copy.settings.environment = parsed.environment
+            state.update(copy)
+            state.notifyDebounced("environment-variables", L("Environment variables saved"))
+        }
+    }
+}
+
+/// The one sentence both variable editors show under a DLL override typed as a variable.
+enum DllOverrideHint {
+    static func text(for entries: [(key: String, value: String)]) -> String {
+        let names = entries.map { "\($0.key)=\($0.value)" }.joined(separator: ", ")
+        return names + " " + (entries.count == 1
+            ? L("looks like a DLL override. Wine reads those only from the DLL overrides field, so as a variable it does nothing.")
+            : L("look like DLL overrides. Wine reads those only from the DLL overrides field, so as variables they do nothing."))
+    }
+}
+
+/// A small ⓘ (or ⚠) that explains one setting. Click opens a popover; hovering still shows
+/// the same text as a tooltip, so it works either way.
+private struct InfoButton: View {
+    let text: String
+    var warning = false
+    @State private var showing = false
+
+    var body: some View {
+        Button { showing.toggle() } label: {
+            Image(systemName: warning ? "exclamationmark.triangle.fill" : "info.circle")
+                .foregroundStyle(warning ? Color.orange : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(text)
+        .accessibilityLabel(warning ? L("Warning") : L("What this setting does"))
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 320, alignment: .leading)
+                .padding(14)
+        }
+    }
+}

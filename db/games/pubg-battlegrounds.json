@@ -1,0 +1,19 @@
+{
+  "id": "pubg-battlegrounds",
+  "title": "PUBG: Battlegrounds",
+  "steam_appid": 578080,
+  "status": "blocked-anticheat",
+  "renderer": null,
+  "provenance": "kernel anti-cheat, structurally impossible under Wine",
+  "notes": "BattlEye kernel",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "Zakynthos",
+      "BattlEye",
+      "UNCHEATER"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  }
+}

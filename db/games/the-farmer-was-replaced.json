@@ -1,0 +1,13 @@
+{
+  "id": "the-farmer-was-replaced",
+  "title": "The Farmer Was Replaced",
+  "steam_appid": 2060160,
+  "status": "community",
+  "renderer": null,
+  "anticheat": null,
+  "provenance": "Reported by skhahehe (upstream#253, 2026-09-29) on an Intel Mac (Core i7-8750H), macOS 15.7.9, with an unofficial Intel build of KLYC-Box (version 1.0.0-intelmac), engine x64-sikarugir10.0_6-r13, environment mode DXVK with Wine's own Direct3D named as the renderer, a local copy of the game, rated 5 of 5 after 6 minutes with minor stutter. Not verified by the maintainer.",
+  "notes": "The only report so far is from an Intel Mac running an unofficial Intel build of KLYC-Box, which is built for Apple Silicon. An Intel Mac runs Windows code without Rosetta, so this says little about Apple Silicon Macs. No report from an Apple Silicon Mac yet, and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

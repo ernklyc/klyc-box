@@ -1,0 +1,13 @@
+{
+  "id": "repo",
+  "title": "R.E.P.O.",
+  "steam_appid": 3241660,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by leninsio (upstream#47, 2026-09-15), Apple M5, macOS 26.6.2, KLYC-Box 0.9.9, engine x64-sikarugir10.0_6-r2, rated 5 of 5 after 1 minute. Graphics mode not stated. PedroResende-ux (upstream#268, 2026-10-01), Apple M5, macOS 26.6.2, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT (the environment's mode), rated 4 of 5 after 119 minutes with nothing named as wrong. Not verified by the maintainer.",
+  "notes": "Reported perfect on the default engine after a one-minute session, and playable for two hours on DXMT on an M5. Neither reporter said whether they played online with friends. No measurement here yet.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

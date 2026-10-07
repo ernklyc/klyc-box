@@ -1,0 +1,13 @@
+{
+  "id": "pico-park-classic-edition",
+  "title": "PICO PARK:Classic Edition",
+  "steam_appid": 461040,
+  "status": "community",
+  "renderer": "dxvk",
+  "anticheat": null,
+  "provenance": "Reported by Michael-Liendo (upstream#281, 2026-10-02), Apple M4, macOS 27.0, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, DXVK as the environment's mode, rated 5 of 5 after 1 minute, recipe steam. Not verified by the maintainer.",
+  "notes": "The 2016 edition, which Steam no longer sells (its store page says it is no longer available; the 2021 PICO PARK is Steam 1509960 and a separate game), so this row is for people who already own it. Reported perfect on DXVK on the default engine after a one-minute session, enough for the menu and a first room. Co-op with other players is the whole game and the report does not say whether a session with others was tried. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

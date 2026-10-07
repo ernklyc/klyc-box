@@ -1,0 +1,30 @@
+{
+  "id": "heartopia",
+  "title": "Heartopia",
+  "steam_appid": 4025700,
+  "status": "community",
+  "renderer": null,
+  "anticheat": null,
+  "provenance": "Reported by myzenon (upstream#155, 2026-09-20): rated 4, playable with minor issues, Apple M4 Pro, macOS 27.0, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.28; graphics mode not stated. Not run here.",
+  "notes": "Reported playable at 120 fps, about 100 on the 2K highest preset, on an M4 Pro with macOS 27. Measured on an M4 with macOS 27.0 on 2026-09-30, DXMT, up to the announcement board, about 59 fps on the game's own counter there, not played further. The input faults below are fixed in engine r15.",
+  "knownIssues": [
+    {
+      "symptom": "After switching to another app and back, the game window has focus but ignores the mouse and keyboard until the game is restarted",
+      "cause": "Wine 10's Mac driver sent the game a made-up click in its title bar whenever macOS gave it focus back, and Unity ignores the focus gain that follows such a click, so it keeps drawing but drops every click and key (Wine bug 48121, upstream#182). Measured on an M4 with macOS 27.0 on engine r15: the announcement tabs keep working after a Cmd+Tab round trip and after 15 seconds away",
+      "fix": "Fixed in engine r15, which environments on the default engine pick up by themselves once Steam is closed. The reporter confirmed it on an M4 Pro on r15 and on the Wine 11 engine (upstream#182, 2026-09-30). On an older engine, restart the game."
+    },
+    {
+      "symptom": "Takes no clicks at all from the start when launched with Steam's Play button",
+      "cause": "The game makes its window key without making it Wine's foreground window, and the Mac driver dropped the focus event macOS sent back, so raw input never reached the game (CrossOver Hack #18896). Measured on an M4 with macOS 27.0: two launches out of two on engine r13 took no click, the first click works on r15",
+      "fix": "Fixed in engine r15, which environments on the default engine pick up by themselves once Steam is closed"
+    },
+    {
+      "symptom": "The dialog shown while the game loads has no text, only a white and a teal button",
+      "cause": "Not the graphics mode: it looks the same on DXMT and DXVK (an M4 with macOS 27.0). Not found yet. The game embeds a Chromium web view (Vuplex 3D WebView), whose helper process was not running, and logs \"Got null handle from IDXGIResource::GetSharedHandle\" 30 times at start, so the dialog's page may never reach the screen. Not confirmed",
+      "fix": "The teal button on the right continues into the game"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null,
+  "verified": null
+}

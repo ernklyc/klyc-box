@@ -1,0 +1,29 @@
+name: Problem report
+description: Something does not work, or KLYC-Box closed unexpectedly (the app can fill most of this in).
+labels: [bug]
+title: "Problem: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The app pre-fills the version and the log excerpt ("Report a problem…" in Settings, or the offer after an unexpected close). Read the log field before you submit: it should contain no file paths, accounts or game lists. Remove anything you do not want to share.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw.
+    validations:
+      required: true
+  - type: input
+    id: chip
+    attributes:
+      label: Mac chip and macOS
+  - type: input
+    id: version
+    attributes:
+      label: KLYC-Box version
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or crash summary
+      render: text

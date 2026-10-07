@@ -1,0 +1,19 @@
+{
+  "id": "sayonara-wild-hearts",
+  "title": "Sayonara Wild Hearts",
+  "steam_appid": 1122720,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by atkgitxp (upstream#45, 2026-09-14), Apple M4 Pro, macOS 26.6.2, KLYC-Box 0.9.9, engine x64-sikarugir10.0_6-r2, DXMT, rated 5 of 5 after 10 minutes. The same reporter confirmed on upstream#182 (2026-09-30) that the KLYC-Box 0.10.1 beta, engine r15, fixed the input and audio after switching apps. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXMT on the default engine. Before engine r15, switching to another app lost the audio and the keyboard and mouse. The reporter confirmed that r15 fixes it.",
+  "knownIssues": [
+    {
+      "symptom": "Switching to another app while the game runs loses audio and keyboard and mouse input, on engines before r15",
+      "cause": "The fault found in Unity games on the Wine 10 engines. The Mac driver left Unity believing it had no focus after a switch, and a Unity game without focus ignores input",
+      "fix": "Fixed in engine r15, confirmed by the reporter on KLYC-Box 0.10.1. Environments on the default engine pick it up by themselves once Steam is closed"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

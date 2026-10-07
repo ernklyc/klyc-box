@@ -1,0 +1,232 @@
+import Darwin
+import XCTest
+@testable import KLYCKit
+
+/// A chosen data location (#24, #68): the resolver's precedence, the preflight on a folder, the
+/// pointer file, and the mover that copies and checks before it removes anything.
+final class HomeLocationTests: XCTestCase {
+    private var tmp: URL!
+    override func setUpWithError() throws {
+        tmp = FileManager.default.temporaryDirectory.appending(path: "hb-home-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    }
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: tmp) }
+
+    func testPrecedenceExplicitThenEnvThenChosenThenDefault() {
+        let d = URL(fileURLWithPath: "/d"), e = URL(fileURLWithPath: "/e"), c = URL(fileURLWithPath: "/c"), x = URL(fileURLWithPath: "/x")
+        XCTAssertEqual(KLYCPaths.resolve(explicit: x, env: e, configured: c, reachable: true, defaultHome: d).home, x)
+        XCTAssertEqual(KLYCPaths.resolve(explicit: nil, env: e, configured: c, reachable: true, defaultHome: d).home, e)
+        XCTAssertEqual(KLYCPaths.resolve(explicit: nil, env: nil, configured: c, reachable: true, defaultHome: d).home, c)
+        let unplugged = KLYCPaths.resolve(explicit: nil, env: nil, configured: c, reachable: false, defaultHome: d)
+        XCTAssertEqual(unplugged.home, d, "an unplugged drive falls back to the default")
+        XCTAssertEqual(unplugged.unavailable, c, "and says which location is missing")
+        XCTAssertEqual(KLYCPaths.resolve(explicit: nil, env: nil, configured: nil, reachable: false, defaultHome: d).home, d)
+    }
+
+    func testPointerFileRoundTrip() throws {
+        let file = tmp.appending(path: "config.json")
+        XCTAssertNil(KLYCPaths.configuredHome(from: file))
+        try KLYCPaths.setConfiguredHome(URL(fileURLWithPath: "/Volumes/Games/KLYC-Box"), file: file)
+        XCTAssertEqual(KLYCPaths.configuredHome(from: file)?.path, "/Volumes/Games/KLYC-Box")
+        try KLYCPaths.setConfiguredHome(nil, file: file)
+        XCTAssertNil(KLYCPaths.configuredHome(from: file))
+    }
+
+    func testLocationPreflight() throws {
+        let def = tmp.appending(path: "default"), good = tmp.appending(path: "good"), inside = def.appending(path: "inner")
+        try FileManager.default.createDirectory(at: good, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: inside, withIntermediateDirectories: true)
+        XCTAssertNil(KLYCPaths.locationProblem(good, defaultHome: def))
+        XCTAssertNotNil(KLYCPaths.locationProblem(tmp.appending(path: "missing"), defaultHome: def))
+        XCTAssertNotNil(KLYCPaths.locationProblem(inside, defaultHome: def), "inside the default home would move the data into itself")
+        XCTAssertNotNil(KLYCPaths.locationProblem(tmp, defaultHome: tmp.appending(path: "default")), "the default's own parent is refused too")
+        XCTAssertNil(KLYCPaths.locationWarning(good), "a local folder is not a share warning")
+    }
+
+    // The volume check asks the volume instead of trusting a name. The old check read
+    // volumeSupportsSymbolicLinks and refused exFAT by name, but macOS reports exFAT as supporting
+    // symbolic links and creates them, so it never fired and the promised refusal never happened
+    // (measured 2026-09-09: a home moved to exFAT was accepted and the bottle ran).
+    // FAT32 caps a file at one byte under 4 GiB and game files pass that routinely, so a drive
+    // that reports a small maximum is refused. Runs only where such a volume is mounted.
+    func testSmallMaximumFileSizeIsRefused() throws {
+        let fat = URL(fileURLWithPath: "/Volumes/FAT32TEST")
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: fat.path), "no FAT32 volume mounted")
+        let problem = KLYCPaths.locationProblem(fat, defaultHome: tmp)
+        XCTAssertNotNil(problem)
+        XCTAssertTrue(problem?.contains("larger than") == true, "says why, not just no: \(problem ?? "nil")")
+    }
+
+    // A game install is tens or hundreds of GB that nobody searches for. After a 75 GB install on
+    // 2026-09-09, Spotlight's mds_stores sat at 55% with the load average above 300 and the machine
+    // was unusable, which made a game launched into it look hung. ensure() marks the home so
+    // Spotlight skips it.
+    func testEnsureMarksTheHomeAsNeverIndexed() throws {
+        let home = tmp.appending(path: "home")
+        let paths = KLYCPaths(home: home)
+        try paths.ensure()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: home.appending(path: ".metadata_never_index").path),
+                      "engines and environments must not be indexed")
+        try paths.ensure()  // idempotent: a second run must not fail on the existing marker
+    }
+
+    func testVolumeProbePassesOnAWritableFolderAndLeavesNothing() throws {
+        let dir = tmp.appending(path: "vol")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        XCTAssertNil(KLYCPaths.volumeProblem(dir, uuid: "fixed-uuid"))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), [],
+                       "the probe cleans up after itself, including the c: link and the executable")
+    }
+
+    func testVolumeProbeReportsAnUnwritableFolder() throws {
+        let dir = tmp.appending(path: "ro")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path) }
+        XCTAssertNotNil(KLYCPaths.volumeProblem(dir), "a folder it cannot write in is refused")
+    }
+
+    func testMoveCopiesChecksThenRemovesAndKeepsLinks() throws {
+        XCTAssertTrue(HomeMove.sameLocalVolume(tmp, tmp), "this disk is the clonefile path")
+        try assertMoveCopiesChecksThenRemovesAndKeepsLinks(clone: true)
+    }
+
+    func testMoveStreamsACompleteTreeWhenCloneIsOff() throws {
+        try assertMoveCopiesChecksThenRemovesAndKeepsLinks(clone: false)
+    }
+
+    private func assertMoveCopiesChecksThenRemovesAndKeepsLinks(clone: Bool) throws {
+        let src = tmp.appending(path: clone ? "src-clone" : "src-stream")
+        let dst = tmp.appending(path: clone ? "dst-clone" : "dst-stream")
+        let fm = FileManager.default
+        try fm.createDirectory(at: src.appending(path: "bottles/Games/dosdevices"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: src.appending(path: "engines/e/wine"), withIntermediateDirectories: true)
+        try Data(repeating: 7, count: 5000).write(to: src.appending(path: "bottles/Games/system.reg"))
+        try Data().write(to: src.appending(path: "bottles/Games/empty.dat"))
+        try Data("x".utf8).write(to: src.appending(path: "engines/e/wine/w"))
+        try Data("{}".utf8).write(to: src.appending(path: "library.json"))
+        try Data("{\"home\":\"/x\"}".utf8).write(to: src.appending(path: "config.json"))
+        try fm.createSymbolicLink(atPath: src.appending(path: "bottles/Games/dosdevices/c:").path, withDestinationPath: "../drive_c")
+        let before = try HomeMove.tally(src.appending(path: "bottles"))
+        var seen: [String] = []
+        var lastCopied: Int64 = 0
+        var lastItems = 0
+        try HomeMove.move(from: src, to: dst, clone: clone) { name, copied, items in
+            if seen.last != name { seen.append(name) }
+            lastCopied = copied
+            lastItems = items
+        }
+        XCTAssertEqual(seen, ["bottles", "engines", "library.json"], "the pointer file is not data")
+        XCTAssertGreaterThan(lastCopied, 0, "byte progress has to move or a network copy looks stuck")
+        XCTAssertGreaterThan(lastItems, 0, "file count has to move or a tree of tiny files looks stuck")
+        XCTAssertTrue(fm.fileExists(atPath: dst.appending(path: "bottles/Games/system.reg").path))
+        XCTAssertEqual(try Data(contentsOf: dst.appending(path: "bottles/Games/empty.dat")).count, 0)
+        let after = try HomeMove.tally(dst.appending(path: "bottles"))
+        XCTAssertEqual(after.files, before.files); XCTAssertEqual(after.bytes, before.bytes)
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: dst.appending(path: "bottles/Games/dosdevices/c:").path), "../drive_c", "links travel as links")
+        XCTAssertFalse(fm.fileExists(atPath: src.appending(path: "bottles").path), "removed at the source only after the check")
+        XCTAssertTrue(fm.fileExists(atPath: src.appending(path: "config.json").path), "the pointer stays put")
+        XCTAssertTrue(fm.fileExists(atPath: dst.appending(path: ".metadata_never_index").path),
+                      "Spotlight stays off at the destination even when the source marker is not copied")
+    }
+
+    /// A Wine prefix has `z:` → `/` and user folders → a directory outside the tree. The mover
+    /// copies those as links and never walks through them. Spotlight's `.metadata_never_index`
+    /// is skipped at every level: that name inside `drive_c` is what `copyItem` died on over SMB.
+    func testMoveDoesNotFollowOutboundLinksOrCopySpotlightMarkers() throws {
+        let src = tmp.appending(path: "src"), dst = tmp.appending(path: "dst")
+        let outside = tmp.appending(path: "outside")
+        let fm = FileManager.default
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "canary".write(to: outside.appending(path: "canary.txt"), atomically: true, encoding: .utf8)
+
+        let bottle = src.appending(path: "bottles/Games")
+        try fm.createDirectory(at: bottle.appending(path: "dosdevices"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: bottle.appending(path: "drive_c/users/tester"), withIntermediateDirectories: true)
+        try Data("reg".utf8).write(to: bottle.appending(path: "system.reg"))
+        try fm.createSymbolicLink(atPath: bottle.appending(path: "dosdevices/c:").path, withDestinationPath: "../drive_c")
+        try fm.createSymbolicLink(atPath: bottle.appending(path: "dosdevices/z:").path, withDestinationPath: "/")
+        try fm.createSymbolicLink(atPath: bottle.appending(path: "drive_c/users/tester/Documents").path,
+                                  withDestinationPath: outside.path)
+        XCTAssertTrue(fm.createFile(atPath: src.appending(path: ".metadata_never_index").path, contents: nil))
+        XCTAssertTrue(fm.createFile(atPath: bottle.appending(path: "drive_c/.metadata_never_index").path, contents: nil))
+        let fifo = bottle.appending(path: "drive_c/run.sock")
+        guard mkfifo(fifo.path, 0o644) == 0 else { return XCTFail("mkfifo: \(errno)") }
+
+        try HomeMove.move(from: src, to: dst)
+
+        XCTAssertTrue(fm.fileExists(atPath: src.appending(path: ".metadata_never_index").path),
+                      "the source marker is not data and is left in place")
+        XCTAssertTrue(fm.fileExists(atPath: dst.appending(path: ".metadata_never_index").path))
+        XCTAssertFalse(fm.fileExists(atPath: dst.appending(path: "bottles/Games/drive_c/.metadata_never_index").path),
+                       "a marker inside drive_c is Spotlight junk, not Windows data")
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: dst.appending(path: "bottles/Games/dosdevices/z:").path), "/")
+        var zst = stat()
+        XCTAssertEqual(lstat(dst.appending(path: "bottles/Games/dosdevices/z:").path, &zst), 0)
+        XCTAssertEqual(zst.st_mode & S_IFMT, S_IFLNK, "z: must be a link, not a copy of /")
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: dst.appending(path: "bottles/Games/dosdevices/c:").path), "../drive_c")
+        var dstSt = stat()
+        XCTAssertEqual(lstat(dst.appending(path: "bottles/Games/drive_c/users/tester/Documents").path, &dstSt), 0)
+        XCTAssertEqual(dstSt.st_mode & S_IFMT, S_IFLNK)
+        XCTAssertEqual(try fm.destinationOfSymbolicLink(atPath: dst.appending(path: "bottles/Games/drive_c/users/tester/Documents").path),
+                       outside.path)
+        XCTAssertEqual(try String(contentsOf: outside.appending(path: "canary.txt"), encoding: .utf8), "canary")
+        XCTAssertTrue(fm.fileExists(atPath: "/usr"), "/ must be untouched")
+        var fifoSt = stat()
+        XCTAssertNotEqual(lstat(dst.appending(path: "bottles/Games/drive_c/run.sock").path, &fifoSt), 0,
+                          "runtime sockets and FIFOs are not environment data")
+    }
+
+    func testTallySkipsSpotlightMarker() throws {
+        let root = tmp.appending(path: "bottle")
+        try FileManager.default.createDirectory(at: root.appending(path: "drive_c"), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: root.appending(path: "drive_c/f"))
+        XCTAssertTrue(FileManager.default.createFile(atPath: root.appending(path: "drive_c/.metadata_never_index").path, contents: nil))
+        let t = try HomeMove.tally(root)
+        XCTAssertEqual(t.files, 1)
+        XCTAssertEqual(t.bytes, 1)
+    }
+
+    func testSameLocalVolumeIsTrueOnTheSameFolder() throws {
+        XCTAssertTrue(HomeMove.sameLocalVolume(tmp, tmp),
+                      "a copy on this disk may clone; a network share must not")
+    }
+
+    func testSameLocalVolumeFailsClosedWhenTheDestinationIsMissing() {
+        let missing = URL(fileURLWithPath: "/Volumes/KLYCMissingVolume", isDirectory: true)
+        XCTAssertFalse(HomeMove.sameLocalVolume(tmp, missing),
+                       "a path that cannot be probed must not clonefile")
+        XCTAssertNil(KLYCPaths.locationWarning(missing),
+                     "a missing folder is not a share warning")
+    }
+
+    func testSameLocalVolumeIsFalseOnANetworkVolume() throws {
+        guard let remote = firstNetworkVolume() else {
+            throw XCTSkip("no network volume mounted")
+        }
+        XCTAssertFalse(HomeMove.sameLocalVolume(tmp, remote),
+                       "a network share must stream bytes, never clonefile")
+        XCTAssertNotNil(KLYCPaths.locationWarning(remote),
+                        "a share is a warning, not a refusal")
+    }
+
+    /// Any non-local mount under /Volumes, so the test does not name a particular share.
+    private func firstNetworkVolume() -> URL? {
+        let root = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) else { return nil }
+        for name in names {
+            let url = root.appending(path: name, directoryHint: .isDirectory)
+            var st = statfs()
+            guard statfs(url.path, &st) == 0 else { continue }
+            if UInt32(st.f_flags) & UInt32(MNT_LOCAL) == 0 { return url }
+        }
+        return nil
+    }
+
+    func testHasData() throws {
+        let p = KLYCPaths(home: tmp)
+        XCTAssertFalse(p.hasData)
+        try FileManager.default.createDirectory(at: p.bottles.appending(path: "Games"), withIntermediateDirectories: true)
+        XCTAssertTrue(p.hasData)
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "world-of-warships",
+  "title": "World of Warships",
+  "steam_appid": 552990,
+  "status": "blocked-publisher",
+  "renderer": null,
+  "anticheat": null,
+  "provenance": "Run here on 2026-09-30 on an M4 with macOS 27.0, engine x64-sikarugir10.0_6-r15, DXMT, the Steam version.",
+  "notes": "Wargaming ended World of Warships on macOS, and the Windows game refuses to start on a Mac: after the region choice it shows \"Sorry, unsupported operating system: macOS support has been discontinued\" and quits. It asks Wine which system it runs on and stops when the answer is macOS, so the graphics mode and the engine make no difference. The launcher itself works. The download is 84 GB.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": "2026-09-30"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "kuukiyomi-consider-it",
+  "title": "KUUKIYOMI: Consider It",
+  "steam_appid": 1221540,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by s1w2a3 (upstream#242, 2026-09-28), Apple A18 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, default settings, rated 5 of 5 after 4 minutes. Not verified by the maintainer.",
+  "notes": "Known in Japan as Minna de Kuuki Yomi. Reported perfect on DXMT on the default engine r11 after a short session. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

@@ -1,0 +1,41 @@
+{
+  "writes": [
+    {
+      "update": {
+        "fields": {
+          "appid": {
+            "integerValue": "440"
+          },
+          "chip": {
+            "stringValue": "M4"
+          },
+          "engine": {
+            "stringValue": "wine 10"
+          },
+          "macos": {
+            "stringValue": "15.1"
+          },
+          "note": {
+            "stringValue": "ok"
+          },
+          "rating": {
+            "integerValue": "4"
+          },
+          "renderer": {
+            "stringValue": "dxmt"
+          },
+          "works": {
+            "booleanValue": true
+          }
+        },
+        "name": "projects/test-proj/databases/(default)/documents/reports/440_UID"
+      },
+      "updateTransforms": [
+        {
+          "fieldPath": "updatedAt",
+          "setToServerValue": "REQUEST_TIME"
+        }
+      ]
+    }
+  ]
+}

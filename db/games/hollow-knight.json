@@ -1,0 +1,28 @@
+{
+  "id": "hollow-knight",
+  "title": "Hollow Knight",
+  "steam_appid": 367520,
+  "status": "community",
+  "renderer": null,
+  "anticheat": null,
+  "provenance": "Reported by AYDJI (upstream#106, 2026-09-17), Apple M4, macOS 27.0 as entered, KLYC-Box 0.9.6, engine x64-sikarugir10.0_6-r0, graphics mode not stated, rated 4 of 5 (playable, minor issues) at 1080p 75 Hz. Not verified by the maintainer.",
+  "notes": "This game has a native macOS version on Steam, so the Mac Steam app runs it directly without KLYC-Box. The Windows build was reported playable through KLYC-Box at 1080p and 75 Hz, mode not stated, with an occasional keyboard issue. No measurement here yet.",
+  "knownIssues": [
+    {
+      "symptom": "Keyboard input drops once in a while (reported, Windows build through KLYC-Box)",
+      "cause": null,
+      "fix": "Not investigated. The native macOS version avoids Wine altogether."
+    },
+    {
+      "symptom": "Some cutscenes (the Nailsmith's, the Black Egg's) stay on a black screen with the ambience playing (reported on an M4, DXMT, default engine r5 and r6, then Wine 11 engine r5, upstream#214).",
+      "cause": "not measured on this game. Hollow Knight plays its cutscenes as video files through Wine's media layer into the graphics layer, and the reporter's log shows those frames failing on the way in (DeviceTexture: Invalid device handle). Both engines tested predate the fixes for that path: the default line got it in r13, the Wine 11 line in r11.",
+      "fix": "Untested on this game. KLYC-Box 0.10.3 with the Wine 11 engine r15 (or the default engine r13 or later) carries the fixes, measured on another Unity game's menu video. The native Mac build on Steam plays them without Wine."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam, GOG"
+  }
+}

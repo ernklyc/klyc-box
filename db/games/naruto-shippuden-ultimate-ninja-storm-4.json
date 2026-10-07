@@ -1,0 +1,37 @@
+{
+  "id": "naruto-shippuden-ultimate-ninja-storm-4",
+  "title": "NARUTO SHIPPUDEN: Ultimate Ninja STORM 4",
+  "steam_appid": 349040,
+  "status": "verified-local",
+  "renderer": "d3dmetal",
+  "provenance": "verified locally on Apple Silicon (M1 Pro), engine x64-sikarugir10.0_6-r2, macOS 26.6.2, KLYC-Box 0.9.3",
+  "notes": "Plays on D3DMetal. Tested 2026-09-10 on an M1 Pro, macOS 26.6.2, engine x64-sikarugir10.0_6-r2: a fight renders and plays correctly at 1920x1080 on D3DMetal, which is what this row now tells KLYC-Box to pick. The other two modes do not work for this game and the difference is stark: on DXMT 0.80 the movie, title and menus are fine but in a fight the frame flashes black most of the time with brief moments of the correct image, at a steady 30 fps and 13 ms of GPU; on DXVK 1.10.4 the 2D HUD draws and the 3D world never appears, with a clean log. D3DMetal is Apple's Game Porting Toolkit and is gated on Apple's licence, which KLYC-Box asks you to accept the first time a game needs it. Before the first start Steam shows a Bandai Namco licence agreement inside its own window that has to be accepted once. The game is built for a pad and shows pad glyphs: on a keyboard the default mapping is A = L, B = ;, X = K, Y = O, Start = Enter, movement on WASD, so the Press A title screen and the first-run save dialog both want L. Change it in Options > Controls or in config.ini next to the exe. 30 fps is the game's own cap in menus and cinematics.",
+  "lastVerified": "2026-09-10",
+  "rendererResults": {
+    "d3dmetal": {
+      "verdict": "works",
+      "detail": "fight renders and plays correctly at 1920x1080, confirmed by the maintainer playing it (2026-09-10, r2, macOS 26.6.2, M1 Pro). No HUD reading was taken in the fight; menus and cinematics sit at the game's own 30 fps cap."
+    },
+    "dxmt": {
+      "verdict": "fails",
+      "detail": "movie, title and menus correct; in a fight the frame flashes black with brief flashes of the correct image, 30 fps, 13 ms GPU (2026-09-10, r2). Not playable."
+    },
+    "dxvk": {
+      "verdict": "fails",
+      "detail": "HUD draws, the 3D world is black apart from a few effect sprites, DXVK-Kegworks 1.10.4 log clean (2026-09-10, r2)."
+    }
+  },
+  "verified": {
+    "chip": "Apple M1 Pro",
+    "macos": "26.6.2",
+    "engine": "x64-sikarugir10.0_6-r2",
+    "fps": "30 in menus and cinematics, the game's own cap; plays in a fight on D3DMetal at 1920x1080, not measured there"
+  },
+  "knownIssues": [
+    {
+      "symptom": "On DXMT a fight is black most of the time with brief flashes of the picture; on DXVK the characters and stage never draw.",
+      "cause": "unknown. The game runs at a steady frame rate and the HUD is fine on both, so it is the 3D scene's presentation that those two modes get wrong.",
+      "fix": "use D3DMetal, which this row selects for you."
+    }
+  ]
+}

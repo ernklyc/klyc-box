@@ -1,0 +1,17 @@
+{
+  "id": "mount-blade-ii-bannerlord",
+  "title": "Mount & Blade II: Bannerlord",
+  "steam_appid": 261550,
+  "status": "reported-upstream",
+  "renderer": "dxmt",
+  "provenance": "DXMT changelog v0.72 (github.com/3Shain/dxmt/releases), and since reported by a player: rhaerae (upstream#286, 2026-10-02), the Epic Games copy, Apple M1 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, frame cap 60, rated 5 of 5. The report logged 1 minute through KLYC-Box and the reporter adds that they have played for more than three days with nothing wrong. Not run here.",
+  "notes": "cloth simulation fixed (the changelog's words). One player report on an M1 Pro with the Epic copy rates it perfect on DXMT on the default engine with KLYC-Box's frame cap at 60, over several days of play. BattlEye is the multiplayer side's anti-cheat and the report does not say whether multiplayer was tried. No frame rate was given and nothing was measured here.",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "BattlEye"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  }
+}

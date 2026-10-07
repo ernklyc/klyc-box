@@ -1,0 +1,19 @@
+{
+  "id": "ultimate-custom-night",
+  "title": "Ultimate Custom Night",
+  "steam_appid": 871720,
+  "status": "community",
+  "renderer": "wined3d",
+  "anticheat": null,
+  "provenance": "Reported not working by OneKQuad (upstream#226, 2026-09-30), Apple A18 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT mode, which runs Direct3D 9 through DXVK-Kegworks 1.10.4 on that engine. matiasmg-ok (same thread, 2026-09-30) plays it on an M4 MacBook Pro with Wine's own Direct3D and could not get D3DMetal or any other mode to run it. Not verified by the maintainer.",
+  "notes": "A Clickteam Fusion Direct3D 9 game, free on Steam. Reported to run only on Wine's own Direct3D, so that is the mode KLYC-Box picks for it. Gameplay runs well there and the menu is slow, which turning off Visual Effects in the game's main menu helps, by the second reporter's account. On DXVK's Direct3D 9 the loading screen is a slideshow and the menu never appears. Nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "The loading screen plays as a very slow slideshow, the menu never appears and the cursor is hidden, so the game has to be force quit (DXMT mode, A18 Pro, macOS 27.0, engine r11).",
+      "cause": "reported: Direct3D 9 through DXVK, which the default engine uses in every mode but Wine's own Direct3D",
+      "fix": "Wine's own Direct3D, which this row selects. Until a KLYC-Box version carries this row, set it on the game's page under Advanced, Mode for this game."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

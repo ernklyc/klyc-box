@@ -1,0 +1,19 @@
+{
+  "id": "forager",
+  "title": "Forager",
+  "steam_appid": 751780,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by Affireyy (upstream#273, 2026-10-02), Apple M5, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, rated 4 of 5 after 11 minutes, recipe steam. Not verified by the maintainer.",
+  "notes": "Reported playable on DXMT on the default engine, with a mouse pointer the reporter calls a little floaty as the one flaw. No frame rate was given and nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "The mouse feels a little floaty (reported on an M5, DXMT, engine r11)",
+      "cause": "Not investigated here",
+      "fix": "None known"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

@@ -1,0 +1,82 @@
+#!/bin/zsh
+# Release gate: the automated checks in one run, one result file. Scripts/release.sh refuses a beta
+# or stable release without a passing result younger than 24 hours for the commit being released
+# (--hotfix skips the gate and only warns, so an urgent fix is never hostage to a ten-minute run).
+#
+# Required: upgrade-smoke (an existing home stays visible after an update), firstrun-smoke (an empty
+# home installs the engine and shows the window), launch-window-smoke (the main window comes back
+# after a relaunch). Advisory, recorded but never blocking until their false-fail rate is zero:
+# game-smoke (the Sims capture, the CS:GO one-in-six escape) and, with --with-render, render-smoke
+# (a long benchmark run, worth it when the engine or a renderer changed).
+#
+# Needs the screen unlocked: the smokes launch the app and look at its windows.
+# Usage: Scripts/gate.sh [--with-render]
+set -uo pipefail
+cd "$(dirname "$0")/.."
+OUT=private/gate; mkdir -p "$OUT"
+WITH_RENDER=0; [ "${1:-}" = "--with-render" ] && WITH_RENDER=1
+# This Mac's display sleeps after two minutes idle and the session locks with it; every smoke
+# that looks at a window then sees nothing (2026-09-18, three gate runs). Hold the display for
+# as long as this gate runs.
+caffeinate -disu -w $$ >/dev/null 2>&1 &
+COMMIT=$(git rev-parse HEAD)
+git diff-index --quiet HEAD -- || echo "note: tracked files modified, so this result is for $COMMIT plus local changes" >&2
+
+# A locked session (display slept, caffeinate expired) shows no window to any smoke and every
+# screen check "fails" (2026-09-08, gate run 5): say so and stop instead of recording a regression.
+if Scripts/winlist 2>/dev/null | grep -qE "loginwindow[[:space:]]+\|\|[[:space:]]+0,0 [0-9]+x[0-9]+[[:space:]]+layer=20[0-9]{2}[[:space:]]+on=true"; then   # the lock screen: full size, layer 2000-2099, fields tab separated
+  echo "gate: the screen is locked; unlock it and run again (nothing was tested)" >&2
+  python3 -c "import json,time;json.dump({'passed':False,'locked':True,'epoch':int(time.time()),'date':time.strftime('%Y-%m-%d'),'commit':'$COMMIT','required':['unit','upgrade','firstrun','launch-window'],'checks':{}},open('$OUT/latest.json','w'),indent=2)"
+  exit 3
+fi
+# A KLYC-Box already open (the installed one, say) makes every copy the smokes launch start with
+# no window, since they share its bundle id, and upgrade-smoke then "fails" (2026-09-30: 0.9.39
+# was open, and 0.9.39 itself launched as a second copy showed no window either). Stop and say so.
+OPEN=$(pgrep -fl "^[^ ]*KLYC-Box\.app/Contents/MacOS/KLYC-Box( |$)" | grep -v "/dist/KLYC-Box.app/" | head -1)   # argv[0] only, not a shell that names the path
+if [ -n "$OPEN" ]; then
+  echo "gate: another KLYC-Box is open ($OPEN); quit it and run again (nothing was tested)" >&2
+  exit 3
+fi
+echo "gate: building dist/KLYC-Box.app from the working tree"
+Scripts/make-app.sh >"$OUT/make-app.log" 2>&1 || { echo "gate: make-app failed, see $OUT/make-app.log" >&2; exit 2; }
+
+typeset -A R T
+run() {
+  local name=$1; shift; local start=$(date +%s)
+  "$@" >"$OUT/$name.log" 2>&1; local rc=$?
+  case $rc in 0) R[$name]=pass ;; 3) R[$name]=skipped ;; *) R[$name]=fail ;; esac
+  T[$name]=$(( $(date +%s) - start ))
+  printf '  %-14s %s (%ss)\n' "$name" "${R[$name]}" "${T[$name]}"
+}
+echo "gate: required checks"
+# The unit tests first: a beta once shipped over a failing suite because only the smokes ran
+# here (2026-09-17). Ten seconds, and it covers the db checkout next to the repo too.
+run unit swift test
+run upgrade Scripts/upgrade-smoke.sh --screen
+run firstrun Scripts/firstrun-smoke.sh --screen
+run launch-window Scripts/launch-window-smoke.sh
+# Engine probes (Scripts/engine-probe-smoke.sh): one Windows program per Wine-on-macOS patch,
+# run in a throwaway environment on the newest Wine 11 engine this build ships. Required since
+# 2026-10-02: engines r11 to r14 shipped with GetLastError returning a pointer after any window
+# callback, a game launcher refused to install on them for two weeks, and the probe
+# of the day made no display call, so the gate never saw it.
+run engine-probe Scripts/engine-probe-smoke.sh
+echo "gate: advisory checks"
+run game Scripts/game-smoke.sh
+# Advisory until its false-fail rate is zero, like every new check: the process-environment
+# invariant behind the 2026-09-18 launcher fixes (see Scripts/env-invariant-smoke.sh).
+run env-invariant Scripts/env-invariant-smoke.sh
+[ $WITH_RENDER = 1 ] && run render Scripts/render-smoke.sh
+
+passed=true
+for n in unit upgrade firstrun launch-window; do [ "${R[$n]}" = pass ] || passed=false; done
+json="{"
+for n in ${(k)R}; do json+="\"$n\":{\"result\":\"${R[$n]}\",\"seconds\":${T[$n]}},"; done
+json="${json%,}}"
+HB_JSON="$json" HB_COMMIT="$COMMIT" HB_PASSED="$passed" python3 - "$OUT/latest.json" <<'PY'
+import json, os, sys, time
+json.dump({"passed": os.environ['HB_PASSED'] == 'true', "epoch": int(time.time()), "date": time.strftime('%Y-%m-%d'),
+           "commit": os.environ['HB_COMMIT'], "required": ["unit", "upgrade", "firstrun", "launch-window"],
+           "checks": json.loads(os.environ['HB_JSON'])}, open(sys.argv[1], 'w'), indent=2)
+PY
+if [ $passed = true ]; then echo "GATE PASSED for ${COMMIT:0:7} ($OUT/latest.json)"; else echo "GATE FAILED for ${COMMIT:0:7}: see $OUT/*.log"; exit 1; fi

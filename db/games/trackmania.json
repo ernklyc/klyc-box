@@ -1,0 +1,13 @@
+{
+  "id": "trackmania",
+  "title": "Trackmania",
+  "steam_appid": 2225070,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by Chickensfly (upstream#294, 2026-10-03), Apple M5, macOS 26.6.2, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, DXMT as the environment's mode, recipe steam, rated 5 of 5 after 50 minutes. Not verified by the maintainer.",
+  "notes": "Nadeo's 2020 Trackmania, Direct3D 11. Reported perfect after 50 minutes on DXMT on the default engine r17 on an M5. Its Steam page requires a Ubisoft account and the Steam build normally goes through Ubisoft Connect, whose own window does not paint on the default Wine 10 engine (the ubisoft-connect recipe says why), yet the report has only the steam recipe and a perfect rating, so how the sign-in went is the open question. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

@@ -1,0 +1,130 @@
+#!/bin/zsh
+# Upgrade smoke: this build must still see the install the previous build left behind.
+#
+# Seeds a home the way a real user's looks after 0.8: an environment that is NOT the default
+# name ("CS"), holding an installed Steam game, written in the previous release's on-disk
+# shape. Then checks, through the CLI, that the environment lists as real (not DAMAGED).
+# With --screen it also launches the app on that home and requires a window within 30 s,
+# saving a capture to look at. Records private/upgrade-smoke/latest.json, which
+# Scripts/release.sh reads (warn-only, like render-smoke).
+#
+# Why: the 0.8.0 regression (#21) was invisible to every existing check because each one
+# starts from an empty home. Unit tests cover the same contract headlessly
+# (Tests/KLYCKitTests/UpgradeInstallTests.swift); this is the end-to-end echo of it.
+#
+# Usage: Scripts/upgrade-smoke.sh [--screen]
+# Env:   UPGRADE_SMOKE_HOME   (default: $TMPDIR/hb-upgrade-smoke, recreated)
+#        UPGRADE_SMOKE_ENGINE (optional: path of an installed engine dir to link in, so the
+#                              app has an engine and skips onboarding; the CLI part never needs it)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HB="$ROOT/.build/debug/klycbox"
+[ -x "$HB" ] || swift build --package-path "$ROOT" >/dev/null
+SCREEN=0; [ "${1:-}" = "--screen" ] && SCREEN=1
+H="${UPGRADE_SMOKE_HOME:-${TMPDIR:-/tmp}/hb-upgrade-smoke}"
+rm -rf "$H"; mkdir -p "$H/bottles/CS/drive_c/windows"
+STEAM="$H/bottles/CS/drive_c/Program Files (x86)/Steam"
+mkdir -p "$STEAM/steamapps/common/Counter-Strike Source"
+: > "$STEAM/steam.exe"
+cat > "$STEAM/steamapps/appmanifest_240.acf" <<'ACF'
+"AppState"
+{
+	"appid"		"240"
+	"name"		"Counter-Strike: Source"
+	"installdir"		"Counter-Strike Source"
+	"StateFlags"		"4"
+	"SizeOnDisk"		"5000000000"
+}
+ACF
+# The shape 0.8.0 writes (every key), kept in sync with UpgradeInstallTests.bottleJSON_0_8.
+cat > "$H/bottles/CS/bottle.json" <<'JSON'
+{
+  "advertiseAVX" : false,
+  "commandIsControl" : true,
+  "commandIsControlSynced" : true,
+  "created" : "2026-08-23T16:45:00Z",
+  "dllOverrides" : "",
+  "dpiScale" : 96,
+  "dxvkAppConfig" : {},
+  "dxvkAsync" : false,
+  "engineID" : "x64-sikarugir10.0_6-r1",
+  "environment" : {},
+  "formatVersion" : 3,
+  "fpsCap" : 0,
+  "metalHUD" : false,
+  "name" : "CS",
+  "pins" : [],
+  "recipes" : ["steam"],
+  "renderer" : "dxmt",
+  "rendererExplicit" : false,
+  "sync" : "msync",
+  "windowsVersion" : "win10"
+}
+JSON
+if [ -n "${UPGRADE_SMOKE_ENGINE:-}" ] && [ -d "$UPGRADE_SMOKE_ENGINE" ]; then
+  mkdir -p "$H/engines"; ln -s "$UPGRADE_SMOKE_ENGINE" "$H/engines/$(basename "$UPGRADE_SMOKE_ENGINE")"
+fi
+export KLYC_HOME="$H"
+
+fail() { echo "UPGRADE SMOKE FAILED: $*" >&2; record false; exit 1; }
+record() {
+  mkdir -p "$ROOT/private/upgrade-smoke"
+  python3 - "$1" "$SCREEN" "$ROOT/private/upgrade-smoke/latest.json" <<'PY'
+import json, sys, time
+passed, screen, out = sys.argv[1] == "true", sys.argv[2] == "1", sys.argv[3]
+json.dump({"passed": passed, "epoch": int(time.time()), "date": time.strftime("%Y-%m-%d"),
+           "screen": screen}, open(out, "w"), indent=2)
+PY
+}
+
+echo "== CLI: the existing environment is seen"
+out="$("$HB" bottle list 2>&1)"; echo "$out"
+echo "$out" | grep -q '^CS' || fail "environment 'CS' not listed"
+echo "$out" | grep -q 'DAMAGED' && fail "environment reported as damaged"
+
+if [ "$SCREEN" = 1 ]; then
+  echo "== app: launches on that home and shows a window"
+  APP="$ROOT/dist/KLYC-Box.app/Contents/MacOS/KLYC-Box"
+  [ -x "$APP" ] || "$ROOT/Scripts/make-app.sh" >/dev/null
+  pkill -f "dist/KLYC-Box.app/Contents/MacOS/KLYC-Box" 2>/dev/null || true; sleep 1
+  "$APP" >/dev/null 2>&1 &
+  sleep 1; pid=$(pgrep -n -f "dist/KLYC-Box.app/Contents/MacOS/KLYC-Box" || true)
+  [ -n "$pid" ] || fail "app did not start"
+  n=0; win=0
+  until [ "$win" -ge 1 ] || [ $n -ge 30 ]; do
+    sleep 1; n=$((n+1))
+    win=$(osascript -e "tell application \"System Events\" to count windows of (first process whose unix id is $pid)" 2>/dev/null || echo 0)
+  done
+  if [ "$win" -lt 1 ]; then
+    # System Events answers 0 for every app when Accessibility is denied to this shell, and the
+    # failure then reads like an app regression (2026-09-24: an afternoon spent on it, the grant had
+    # gone with an editor update). CG still sees the window, so ask it before blaming the app.
+    # grep -c exits 1 on a zero count, which under set -e killed the script before fail() could
+    # say "no window" (the 3ebeb3a gate, 2026-09-25: an empty log instead of a verdict).
+    cg=$("$ROOT/Scripts/winlist" 2>/dev/null | grep "pid=$pid" | grep -c on=true || true)
+    # What each side saw, so a failure can be read without rerunning it (the 3ebeb3a gate saw the
+    # app make its window within a second yet counted none for 30 s, and the log had nothing).
+    echo "   CG windows for pid $pid:"; "$ROOT/Scripts/winlist" 2>/dev/null | grep "pid=$pid" | sed 's/^/     /' || true
+    echo "   System Events: $(osascript -e "tell application \"System Events\" to name of every process whose unix id is $pid" 2>&1 | head -c 200)"
+    # With the session locked or the display asleep, System Events reports no windows for any
+    # app while CG still lists them (2026-09-28: a gate run on the locked Mac failed here with
+    # Accessibility granted). Denied Accessibility is a different answer: System Events then
+    # refuses outright (-25211). The window being on screen is what this check wants, so when
+    # System Events still answers but lists nothing, CG's word counts.
+    ax=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>&1)
+    if [ "$cg" -ge 1 ] && ! echo "$ax" | grep -qE "25211|assistive access"; then
+      echo "   session locked or display asleep (System Events answers '$ax' but lists no windows): the window is on screen per CG, which counts"
+    else
+      kill "$pid" 2>/dev/null || true
+      [ "$cg" -ge 1 ] && fail "the window is on screen but System Events cannot see it: Accessibility is denied to this shell (System Settings, Privacy & Security, Accessibility)"
+      fail "no window after 30 s"
+    fi
+  fi
+  sleep 4
+  screencapture -x "$ROOT/private/upgrade-smoke/library.png" 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
+  echo "   window appeared; capture at private/upgrade-smoke/library.png (look: the game should show, not 'prepare an environment')"
+fi
+
+record true
+echo "UPGRADE SMOKE PASSED"

@@ -1,0 +1,17 @@
+{
+  "id": "destiny-2",
+  "title": "Destiny 2",
+  "steam_appid": 1085660,
+  "status": "blocked-anticheat",
+  "renderer": null,
+  "provenance": "kernel anti-cheat, structurally impossible under Wine",
+  "notes": "BattlEye kernel; account ban risk",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "BattlEye"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  }
+}

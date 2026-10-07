@@ -1,0 +1,13 @@
+{
+  "id": "rippleloop-demo",
+  "title": "RippleLoop Demo",
+  "steam_appid": 4758450,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by mtremoulet (upstream#236, 2026-09-27), Apple M2 Max, macOS 27.0, KLYC-Box 0.9.33, engine x64-sikarugir10.0_6-r5, DXMT, default settings, rated 5 of 5 after 13 minutes. Not verified by the maintainer.",
+  "notes": "The free demo of RippleLoop (full game Steam 3204820, August 2026). Reported perfect on DXMT with default settings on an M2 Max after 13 minutes. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

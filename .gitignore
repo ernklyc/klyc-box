@@ -1,0 +1,26 @@
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+.DS_Store
+dist/
+site/
+private/
+
+# Stray single-file compile artifacts (e.g. from `swiftc File.swift` in the repo root)
+*.o
+*.d
+*.swiftdeps
+*.swiftdeps~
+*~
+Scripts/winlist
+spike/epic-stub/EpicGamesLauncher.exe
+spike/tools/cabextract
+spike/tools/cabextract.LICENSE
+spike/*/*.exe
+spike/*/*.dll
+reports/node_modules/
+reports/firebase-debug.log
+reports/firestore-debug.log
+reports/ui-debug.log
+reports/.firebaserc

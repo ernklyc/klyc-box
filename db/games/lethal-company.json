@@ -1,0 +1,10 @@
+{
+  "id": "lethal-company",
+  "title": "Lethal Company",
+  "steam_appid": 1966720,
+  "status": "community",
+  "renderer": "dxmt",
+  "provenance": "Community consensus (AppleGamingWiki / r-macgaming / MacPlay), then a KLYC-Box report by phmuni (upstream#124, 2026-09-18): rated 5, perfect, on DXMT, Apple M5, macOS 27.0, engine x64-sikarugir10.0_6-r3, KLYC-Box 0.9.23, ten minutes played through KLYC-Box. Not run here.",
+  "notes": "Boots with no configuration and runs smoothly at 120 fps on an M5 in the one KLYC-Box report, stable over a ten-minute session. Longer play and lobbies are not recorded yet.",
+  "lastVerified": null
+}

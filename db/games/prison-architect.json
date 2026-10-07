@@ -1,0 +1,17 @@
+{
+  "id": "prison-architect",
+  "title": "Prison Architect",
+  "steam_appid": 233450,
+  "status": "community",
+  "renderer": "dxvk",
+  "anticheat": null,
+  "provenance": "Reported by giovane-breno (upstream#264, 2026-09-30), Apple M4, macOS 27.0.1, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXVK, recipes steam and vcrun2022, rated 5 of 5 after 14 minutes. The report does not name the store. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXVK on an M4 with the default engine r11 after 14 minutes, running the Windows build. The Steam version also includes a Mac build. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  }
+}

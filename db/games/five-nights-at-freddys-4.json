@@ -1,0 +1,10 @@
+{
+  "id": "five-nights-at-freddys-4",
+  "title": "Five Nights at Freddy's 4",
+  "steam_appid": 388090,
+  "status": "community",
+  "provenance": "reported by sadsaltygamer37, Apple M1 Pro, unverified by KLYC-Box. kasettakorn (upstream#170, 2026-09-21): rated 5, perfect, Apple M4 Pro, macOS 26.5.2, engine x64-sikarugir10.0_6-r5, KLYC-Box 0.9.32, DXMT, 1 minute played through KLYC-Box (the environment also carried the Sims recipe's MVK_SHADOW_IMPORT=1, which does not concern this game).",
+  "notes": "Plays. Reported on an Apple M1 Pro as running well with no issues, and by a second reporter as perfect on DXMT on an M4 Pro with macOS 26.5.2 after a one-minute session. No frame rate measured. Not tried here; the first game in the series is verified here at 60 fps on DXVK.",
+  "lastVerified": null,
+  "renderer": "dxmt"
+}

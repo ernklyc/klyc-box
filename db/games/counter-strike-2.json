@@ -1,0 +1,47 @@
+{
+  "id": "counter-strike-2",
+  "title": "Counter-Strike 2",
+  "steam_appid": 730,
+  "status": "verified-local",
+  "renderer": "dxmt",
+  "provenance": "verified locally on Apple Silicon (M1 Pro), engine x64-sikarugir10.0_6-r2, macOS 26.6.2, KLYC-Box 0.9.3 Community: OhbananasGaming (upstream#109, 2026-09-17), Apple M5, macOS 26.6.2, KLYC-Box 0.9.19, engine r3, mode not stated, rated 4 of 5 after 4 minutes. FloraKira (upstream#257, 2026-09-29), Apple M5 Pro, macOS 27.0.1, KLYC-Box 0.10.0 beta, engine x64-crossover26.3-r12, DXMT, Windows 11, AVX advertised, rated 5 of 5 after 10 minutes with a small frame drop once in a while.",
+  "notes": "Use DXMT on macOS 15 or newer: a bot match on Dust II ran at 102-108 fps at 1728x1117 fullscreen with the game's defaults, 10.3 ms of GPU per frame and a 9.3 ms frame interval by the Metal HUD, engine r2, DXMT 0.80 (2026-09-10, macOS 26.6.2, M1 Pro). The maintainer played the same match and called it a great experience. The earlier r1 measurement on this Mac was about 70 fps (2026-09-04). r2 is faster on the same settings. The maintainer's own play: some small lags in the first minutes while DXMT compiles and caches shaders, then smooth. Quitting through the game's menu ended the process cleanly: no crash dump in the game folder, Steam's client stayed up for the next launch. DXVK on the same Mac reaches the menu (about 38 fps at 1024x768) and plays, but the maintainer found it very laggy with freezes during play; the DXVK log shows no state cache and async compilation is off, so first-use pipeline compiles stall the game. On macOS 14 DXMT gave a black screen (game runs, never paints; 2026-08-25), so the row keeps DXVK below macOS 15. No NVAPI error on KLYC-Box 0.7.3+, bottles identify as an AMD card. Legacy CS:GO is now its own free Steam app, see the csgo-legacy entry (appid 4465480) for its status, including the macOS 26 map-load freeze tracked in issue #21. History of the legacy gates, for anyone on an old KLYC-Box: 'Failed to initialize NVAPI (0xFFFFFFFE)' means pre-0.7.3 (update, then Repair the bottle); 'graphics hardware does not support all features (CSM)' means DXVK's Direct3D 9 is not loading, fixed for the DXVK renderer in 0.7.8 and for every renderer in 0.7.17. Correction to earlier versions of this entry: the map-load freeze was previously attributed here to async shader compilation (0.7.10); that was wrong, logs later proved the freeze occurs with async off and under every sync mode. The freeze is macOS-26-specific and remains open in issue #21. On the 13-inch MacBook with the A18 Pro chip (macOS 27.0, KLYC-Box 0.9.19, engine x64-sikarugir10.0_6-r3, D3DMetal): about 70 fps at low settings and the panel's 1440x900-class resolution, with drops to 20, rated 4 of 5 after 11 minutes by the reporter of upstream#215 (2026-09-25), who also noted that pressing more than two keys at once loses presses on that laptop. A report on the 0.10.0 beta rates it perfect on DXMT with the Wine 11 engine r12 on an M5 Pro, with an occasional small drop.",
+  "lastVerified": "2026-09-10",
+  "anticheat": {
+    "names": [
+      "VAC"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  },
+  "rendererResults": {
+    "dxmt": {
+      "verdict": "works",
+      "detail": "bot match on Dust II at 102-108 fps, 10.3 ms GPU per frame, 9.3 ms frame interval, 1728x1117 fullscreen, game defaults (2026-09-10, r2, macOS 26.6.2, M1 Pro); about 70 fps on r1 (2026-09-04); black screen on macOS 14 (2026-08-25)"
+    },
+    "dxvk": {
+      "verdict": "works",
+      "detail": "menu and play, but very laggy with freezes in a match on the same Mac (no DXVK state cache, async off); about 38 fps at the 1024x768 menu"
+    }
+  },
+  "rendererMinMacOS": "15.0",
+  "rendererBelow": "dxvk",
+  "verified": {
+    "chip": "Apple M1 Pro",
+    "macos": "26.6.2",
+    "engine": "x64-sikarugir10.0_6-r2",
+    "fps": "about 105"
+  },
+  "knownIssues": [
+    {
+      "symptom": "Music and game sounds stutter or crackle, like a speaker next to a ringing phone, on the speakers, AirPods and a monitor alike",
+      "cause": "The game keeps very little sound queued, and at 48 kHz the Mac asks Wine for 10.7 ms of sound at a time, more than it often has, so it plays a short silence instead. Measured on an M4 with macOS 27.0 on 2026-10-01, engine r17 with DXMT, two minutes of the main menu. At 48 kHz there were 324 dropouts of about 8 ms each. At 96 kHz there were none",
+      "fix": "Open Audio MIDI Setup (Applications, Utilities), select your speakers or wired headphones, set Format to 96,000 Hz or 88,200 Hz, and restart the game. Bluetooth headphones and many monitors do not offer those rates, so on them the stutter stays for now"
+    },
+    {
+      "symptom": "Turning on fullscreen with the game on a second display crashes it (reported on a MacBook Pro with an LG monitor, upstream#156)",
+      "cause": "Not measured here. Fullscreen asks macOS to switch that display's mode, and the crash happens at that step. On a Mac mini whose only screen is the same monitor the game runs without crashing (reported)",
+      "fix": "Use the game's Fullscreen Windowed mode, under Display Mode in its video settings, which fills the screen without a mode switch"
+    }
+  ]
+}

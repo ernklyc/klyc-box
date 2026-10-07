@@ -1,0 +1,18 @@
+{
+  "id": "inside",
+  "title": "INSIDE",
+  "steam_appid": 304430,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Mac App Store only",
+    "note": "Playdead sells a native Mac build on the Mac App Store (macOS 10.12 or later), a separate purchase, so a Steam copy will not launch it."
+  },
+  "provenance": "Reported by Nuke-em (upstream#300, 2026-10-04), Apple M2, macOS 27.2 as entered, KLYC-Box 0.10.3, engine x64-sikarugir10.0_6-r19, DXMT as the environment's mode, recipe steam, rated 5 of 5 after 9 minutes. Not verified by the maintainer.",
+  "notes": "Playdead's 2016 game, Unity with Direct3D 11. Reported perfect after 9 minutes on DXMT on the default engine r19 on an M2. Steam's build is Windows only, and Playdead sells a native Mac build on the Mac App Store as a separate purchase. No frame rate was given and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

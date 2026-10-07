@@ -1,0 +1,13 @@
+{
+  "id": "the-fairy-tale-of-holy-knight-ricca",
+  "title": "The Fairy Tale of Holy Knight Ricca: Two Winged Sisters",
+  "steam_appid": null,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by FloraKira (upstream#258, 2026-09-29), Apple M5 Pro, macOS 27.0.1, KLYC-Box 0.10.0 beta, engine x64-crossover26.3-r12, DXMT (the environment's mode), Windows 11, with the DLL override winhttp=n,b set, rated 5 of 5 after 17 minutes. Not verified by the maintainer.",
+  "notes": "A 3D side-scrolling action game by Mogurasoft (2021), sold on DLsite, not on Steam. Reported perfect on the Wine 11 engine r12 in DXMT mode on an M5 Pro after a 17-minute session. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

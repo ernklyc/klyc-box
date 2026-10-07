@@ -1,0 +1,24 @@
+{
+  "id": "resident-evil-4-remake",
+  "title": "Resident Evil 4",
+  "steam_appid": 2050650,
+  "status": "community",
+  "renderer": "d3dmetal",
+  "anticheat": null,
+  "provenance": "Reported by zn2m4swhkv-sys (upstream#269, 2026-10-01), MacBook Air M2 with 24 GB, macOS 27.0.1, KLYC-Box 0.10.0, D3DMetal, rated 4 of 5 with no length limit on play. The engine was a GPTK 4 revision (x64-sikarugir10.0_6-r14 or r16) or x64-crossover26.3-r12, the reporter is not sure which. A second report by sanireno (upstream#303, 2026-10-04), Apple M5, macOS 27.0.1, KLYC-Box 0.10.2, engine x64-crossover26.3-r10 (the Wine 11 engine), D3DMetal, Windows scale 120 dpi, recipes steam and vcrun2022, rated 4 of 5 after 57 minutes, with some freezes as the one complaint. Not verified by the maintainer.",
+  "notes": "The 2023 remake. RE Engine and Direct3D 12, so D3DMetal. On an M2 MacBook Air at 1280x832 with the in-game cap at 60, mostly mid settings, ray tracing and FSR off, it runs at 30 to 40 fps as the Mac heats up. Looking through a sniper scope drops about 10 fps for a while. An 8BitDo SN30 Pro in X-input mode works, rumble included. The reporter also set Wine's debug output off (WINEDEBUG=-all), D3DM_MTL4=1, D3DM_ENABLE_METALFX=1 and a list of DLL overrides, and says stutters on loud sounds such as shotgun fire and explosions went away after that. None of it was tested here, so it is not part of the setup KLYC-Box applies. A second report on an M5 on the Wine 11 engine r10, D3DMetal, plays for 57 minutes with some freezes, how long they last or when they come was not said. Both reports get into the game and play for about an hour, the second one on the Wine 11 engine for certain, which is worth noting against the WMV intro hang measured on Resident Evil Village on the default engine (that row), so either this game's intro does not take the same path or that engine's media reader copes with it, neither checked here.",
+  "knownIssues": [
+    {
+      "symptom": "The HDR brightness setup screen is blank (reported)",
+      "cause": "Not investigated here",
+      "fix": "Leave HDR off in the game's display settings"
+    },
+    {
+      "symptom": "Some freezes during play (reported on an M5, Wine 11 engine r10, D3DMetal)",
+      "cause": "Not investigated here, how long they last or what brings them on was not said",
+      "fix": "None known"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

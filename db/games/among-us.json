@@ -1,0 +1,24 @@
+{
+  "id": "among-us",
+  "title": "Among Us",
+  "steam_appid": 945360,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by halonsoluis (upstream#29, 2026-09-13), Apple M2 Pro, macOS 26.5, KLYC-Box 0.9.9, engine x64-sikarugir10.0_6-r2, DXMT, rated 5 of 5 after 3 minutes. sususuus12 (upstream#267, 2026-09-30), Apple M4, macOS 27.0, KLYC-Box 0.9.28, engine x64-sikarugir10.0_6-r5, graphics mode not stated, rated 4 of 5 after 57 minutes, with input lost after switching away. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXMT on the default engine, a short session. Online play is the whole game and the reporter did not say whether a lobby was joined. Measured on an M4 with macOS 27.0 on 2026-09-30, DXMT, the first menus only (age check and sign-in screen), not played. On engine r13 the current 64-bit build often closed by itself right after starting on DXMT, which engine r15 fixes, see known issues. A 57-minute session on an M4 rated it playable, the one flaw being lost input after switching to another app, the focus fault that engine r15 fixes.",
+  "knownIssues": [
+    {
+      "symptom": "Closes by itself within two seconds of starting on DXMT, often. On an M4 with macOS 27.0 that happened in 8 of 12 launches on engine r13",
+      "cause": "A bug in DXMT (also upstream, 3Shain/dxmt#219): it created its first Metal pipelines before its Metal device was set, so the game died on a garbage object. Measured on an M4 with macOS 27.0: 0 of 12 launches failed with the fixed DXMT, 0 of 6 with engine r5's older DXMT, and 0 of 8 on DXVK",
+      "fix": "Fixed in engine r15, which environments on the default engine pick up by themselves once Steam is closed. Until then, press Play again, or set this game's graphics mode to DXVK"
+    },
+    {
+      "symptom": "After switching to another app and back, the game keeps drawing but ignores clicks and keys until it is restarted",
+      "cause": "Wine 10's Mac driver sent the game a made-up click in its title bar whenever macOS gave it focus back, and Unity ignores the focus gain that follows such a click, so it keeps drawing but drops every click and key (Wine bug 48121, upstream#182). Measured on an M4 with macOS 27.0: after Cmd+Tab the age check took no clicks on engine r13 and takes them on r15",
+      "fix": "Fixed in engine r15, which environments on the default engine pick up by themselves once Steam is closed. On an older engine, restart the game."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

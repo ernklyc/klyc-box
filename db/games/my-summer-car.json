@@ -1,0 +1,19 @@
+{
+  "id": "my-summer-car",
+  "title": "My Summer Car",
+  "steam_appid": 516750,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by t0nn-1 (upstream#225, 2026-09-26), Apple M4, macOS 27.0, KLYC-Box 0.9.33, engine x64-sikarugir10.0_6-r5, DXMT (the environment's mode), rated 5 of 5 after 6 minutes, with the DLL overrides version=n,b;winmm=n,b;winhttp=n,b set. nik-19201 (upstream#245, 2026-09-28), Apple M1, macOS 27.0, KLYC-Box 0.9.39, engine x64-crossover26.3-r12, D3DMetal, rated 4 after 32 minutes, frame cap 60, DLL override winhttp=n,b, recipes steam and vcrun2022. Not verified by the maintainer.",
+  "notes": "Reported perfect on DXMT on an M4 with the steam, corefonts and vcrun2022 recipes on the Wine 10 engine r5, and playable on D3DMetal on an M1 with the Wine 11 engine r12. The MSCLoader mod loader needs winhttp=n,b in the DLL overrides field, not the environment variables box, and both reporters run it that way (upstream#203 was that mix-up, and the loader works for them since). The M1 report has some stutter where there are many light sources, which the reporter puts down to the game being CPU-bound. No frame rate was given and nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "After a long session the game freezes, and the log fills with \"msync: warn: node memory pool exhausted\" (242 million lines in one report)",
+      "cause": "A bug in msync, the fast synchronization mode: a wait on several objects that lost a race left the thread registered in Wine's background process and nothing removed it, so the pool ran out and that process kept growing. Measured on an M4 with macOS 27.0 with a reproducer, 2026-10-01: the wineserver grew from 30 MB to 77 MB in 30 s on engine r12 and stayed at 39 MB on r13. The Wine 10 default engine had the same fault (19 MB to 83 MB in 30 s on r15, 17 MB flat on r17); the freeze itself was reported on r12",
+      "fix": "Fixed in engine r17 on the default engine, which environments on it pick up by themselves once Steam is closed, and in engine r13 on the Wine 11 engine, which is picked by hand: environments on it never change engine on their own, so choose x64-crossover26.3-r13 on the environment's full page, under Advanced. Until then, set the environment's Synchronization to None and stop the environment before playing, so the change applies"
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

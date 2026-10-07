@@ -1,0 +1,1079 @@
+import Foundation
+
+/// Graphics backend applied to a bottle (or overridden per program).
+public enum Renderer: String, Codable, CaseIterable, Sendable {
+    /// Wine's own D3D-on-OpenGL. Slow; last resort.
+    case wined3d
+    /// D3D10/11 → Metal. KLYC-Box's default.
+    case dxmt
+    /// Apple's D3D11/12 → Metal. Only D3D12 path. Apple-licensed, optional download.
+    case d3dmetal
+    /// D3D9/10/11 → Vulkan → MoltenVK. Use for D3D9 titles.
+    case dxvk
+    /// D3D12 → Vulkan → MoltenVK through vkd3d-proton, with DXVK's DXGI and D3D11 beside it.
+    /// The one route to DirectX 12 that does not go through Apple's D3DMetal, which lacks
+    /// timestamp queries (#63) and stops at Shader Model 6.6. Built by us with
+    /// two patches each; the overlay is the "vkd3d" renderer directory of an engine.
+    case vkd3d
+
+    /// Environment contributed by this renderer, given the engine that hosts it.
+    public func environment(engine: InstalledEngine) throws -> [String: String] {
+        var env: [String: String] = [:]
+        switch self {
+        case .wined3d:
+            return env
+        case .vkd3d:
+            guard let dir = engine.rendererDir("vkd3d") else { throw KLYCError.missing(unavailableReason(in: engine) ?? "vkd3d renderer in engine \(engine.id)") }
+            env["WINEDLLPATH_PREPEND"] = Self.withD9VK(dir.appending(path: "wine").path, engine: engine)
+            // DXVK's DXGI must serve vkd3d-proton (Wine's asks for a swapchain factory it does not
+            // implement), so DXGI, D3D11 and D3D12 all come from the overlay, native first.
+            env["WINEDLLOVERRIDES+"] = "dxgi,d3d11,d3d10core,d3d12,d3d12core=n,b"
+            // MoltenVK lacks a few capabilities both libraries refuse to start without (transform
+            // feedback, robustness2, null descriptors, depth clip, cull distance): these switches
+            // turn those gates into warnings. Feature level and shader model are declared rather
+            // than derived, at what D3DMetal declares, since Metal reports neither honestly.
+            env["VKD3D_RELAX_DEVICE_CAPS"] = "1"
+            env["DXVK_RELAX_FEATURES"] = "1"
+            env["VKD3D_FEATURE_LEVEL"] = "12_0"
+            env["VKD3D_SHADER_MODEL"] = "6_6"
+        case .dxmt:
+            guard let dir = engine.rendererDir("dxmt") else { throw KLYCError.missing(unavailableReason(in: engine) ?? "dxmt renderer in engine \(engine.id)") }
+            env["WINEDLLPATH_PREPEND"] = Self.withD9VK(dir.appending(path: "wine").path, engine: engine)
+        case .d3dmetal:
+            // The old text said "(optional component not installed?)" whether the files were absent or
+            // merely unlicensed; #61's engine had them, and the reporter went looking for a download.
+            guard let dir = engine.rendererDir("d3dmetal") else { throw KLYCError.missing(unavailableReason(in: engine) ?? "d3dmetal renderer in engine \(engine.id)") }
+            let external = dir.appending(path: "external").path
+            // D3DMetal 3.0 has no timestamp queries (Guardians of the Galaxy, #63). When the engine
+            // carries the timestamp shim, its d3d12.dll goes in front of D3DMetal's and serves them.
+            // HB_D3D12_TSSHIM=0 in a program's environment leaves the shim loaded but idle.
+            var overlays = dir.appending(path: "wine").path
+            if let shim = engine.timestampShimDir(d3dmetal: dir) {
+                overlays = shim.appending(path: "wine").path + ":" + overlays
+                // The shim loads D3DMetal's d3d12.dll by this path: under its own name the real one
+                // would come back as the shim (see InstalledEngine.timestampShimDir for the layout).
+                env["HB_D3D12_REAL"] = "Z:" + shim.appending(path: "wine/x86_64-windows/\(InstalledEngine.shimRealName).dll").path.replacingOccurrences(of: "/", with: "\\")
+            }
+            // d3dmetal is 64-bit only, so 32-bit d3d10/11 falls through to dxmt instead of wined3d
+            if let dxmt = engine.rendererDir("dxmt") { overlays += ":" + dxmt.appending(path: "wine").path }
+            env["WINEDLLPATH_PREPEND"] = Self.withD9VK(overlays, engine: engine)
+            env["CX_D3DMETALPATH"] = external
+            env["DYLD_FALLBACK_LIBRARY_PATH+"] = external
+            env["DYLD_FALLBACK_FRAMEWORK_PATH+"] = external
+        case .dxvk:
+            // DXVK's D3D10/11 live in the "dxvk" overlay, but its D3D9 ships in a *separate*
+            // "d9vk" overlay. Both dirs must be on WINEDLLPATH_PREPEND or a D3D9 title's d3d9
+            // resolves to builtin wined3d, whose D3D9 lacks the DF16/DF24 shadow-depth formats
+            // Source's CSM check probes — CS:GO then quits with "graphics hardware does not
+            // support all features (CSM)" (#21). d9vk is required for .dxvk: a missing overlay
+            // must fail loudly, never silently regress D3D9 back to wined3d.
+            guard let dxvk = engine.rendererDir("dxvk") else { throw KLYCError.missing("dxvk renderer in engine \(engine.id)") }
+            guard let d9vk = engine.rendererDir("d9vk") else { throw KLYCError.missing("d9vk (DXVK D3D9) renderer in engine \(engine.id)") }
+            env["WINEDLLPATH_PREPEND"] = [d9vk.appending(path: "wine").path, dxvk.appending(path: "wine").path].joined(separator: ":")
+            env["WINEDLLOVERRIDES+"] = "dxgi,d3d9,d3d10core,d3d11=n,b"
+        }
+        return env
+    }
+
+    /// Appends the d9vk overlay (DXVK's D3D9) to a Metal backend's DLL search path.
+    ///
+    /// The renderer setting chooses the D3D10/11/12 backend; D3D9 must not be collateral damage.
+    /// Neither the dxmt nor the d3dmetal overlay ships a d3d9 for either architecture (d3dmetal's
+    /// i386 directory is a symlink to cnc-ddraw's and holds only ddraw.dll), so without this a
+    /// D3D9 title silently gets Wine's own wined3d, whose D3D9 lacks the DF16/DF24 shadow-depth
+    /// formats Source's CSM check probes. Legacy CS:GO then refuses to start with "graphics
+    /// hardware does not support all features (CSM)".
+    ///
+    /// 0.7.9 fixed this for the dxvk renderer only, leaving it live on dxmt — the DEFAULT — and
+    /// on d3dmetal. Reproduced on a dxmt bottle 2026-08-30 with that exact dialog (issue #21).
+    /// Appended, not prepended, so the chosen backend keeps priority for everything it does ship;
+    /// d9vk contributes only d3d9.dll, so the two never collide.
+    ///
+    /// Degrades to the backend alone if the engine has no d9vk, rather than throwing: this is the
+    /// default renderer's path, and an engine missing d9vk should still run D3D11 titles. The
+    /// dxvk case keeps its hard failure, because there D3D9 is the whole point.
+    private static func withD9VK(_ path: String, engine: InstalledEngine) -> String {
+        // An engine can say Direct3D 9 is faster on Wine's own (the Wine 11 tree, upstream#198);
+        // then the automatic modes leave d9vk off and the explicit DXVK mode below keeps it.
+        if engine.direct3D9UsesWined3d { return path }
+        guard let d9vk = engine.rendererDir("d9vk") else { return path }
+        return [path, d9vk.appending(path: "wine").path].joined(separator: ":")
+    }
+
+    /// Whether this mode has a Direct3D 12 a game can use. Wine's own d3d12 (vkd3d over
+    /// MoltenVK) creates no device on a Mac, so only the two overlays count.
+    public var servesDirect3D12: Bool { self == .d3dmetal || self == .vkd3d }
+
+    /// The mode for a program that only has Direct3D 12 (`ProgramNeeds.direct3D12Only`) when
+    /// `chosen` cannot serve it: D3DMetal when the engine ships it, licence accepted or still to
+    /// ask for (the caller's licence flow handles that), else vkd3d, else `chosen` unchanged so
+    /// the launch fails the way it did rather than in a new way. A program with a Direct3D 11
+    /// path never comes here; the environment's choice stands for it.
+    public static func forDirect3D12Only(chosen: Renderer, engine: InstalledEngine) -> Renderer {
+        if chosen.servesDirect3D12 { return chosen }
+        if Renderer.d3dmetal.availability(in: engine) != .notShipped { return .d3dmetal }
+        if Renderer.vkd3d.availability(in: engine) == .available { return .vkd3d }
+        return chosen
+    }
+
+    /// The backend to offer after `current` failed on launch, cycling through the Metal-backed
+    /// options. Direct3D 9 no longer constrains this: `withD9VK` attaches DXVK's d3d9 to every
+    /// renderer, so switching backend can't drop D3D9 support the way it could before 0.7.17.
+    public static func suggestion(after current: Renderer, d3dmetalAvailable: Bool = true, vkd3dAvailable: Bool = false) -> Renderer {
+        let next: Renderer
+        switch current {
+        case .dxmt: next = .d3dmetal
+        // After Apple's DirectX 12 fails, the other DirectX 12 route comes before giving up on
+        // 12 altogether (#63: a title that D3DMetal crashes may run through vkd3d-proton).
+        case .d3dmetal: next = vkd3dAvailable ? .vkd3d : .dxvk
+        case .vkd3d: next = .dxvk
+        case .dxvk, .wined3d: next = .dxmt
+        }
+        // Never suggest D3DMetal on an engine that does not ship it (or has not accepted the
+        // licence): setting it would make every launch in the environment fail (review #2).
+        if next == .d3dmetal && !d3dmetalAvailable { return current == .dxmt ? (vkd3dAvailable ? .vkd3d : .dxvk) : .dxmt }
+        return next
+    }
+
+    // MARK: Availability (issue #61)
+
+    /// Whether an engine can run this renderer, and if not, why: the files may be absent, or
+    /// present but behind a licence that has not been accepted for that engine. The two need
+    /// different actions, and the old single message ("optional component not installed?")
+    /// sent a user whose engine had the files to reinstalling.
+    public enum Availability: Equatable, Sendable {
+        case available
+        case needsLicence(String)
+        case notShipped
+    }
+
+    public func availability(in engine: InstalledEngine) -> Availability {
+        if self == .wined3d { return .available }
+        if engine.rendererDir(rawValue) != nil { return .available }
+        if let gate = EngineManifest.gatedRenderers[rawValue], engine.ships(rawValue) { return .needsLicence(gate) }
+        return .notShipped
+    }
+
+    /// One sentence for a person: what stops this renderer in `engine` and what to do. Nil when it runs.
+    public func unavailableReason(in engine: InstalledEngine) -> String? {
+        let name = Self.displayName(self)
+        switch availability(in: engine) {
+        case .available: return nil
+        case .needsLicence:
+            return "\(name) is in engine \(engine.id), but Apple's licence has not been accepted for that engine. Accept it in the environment's settings (Graphics → Review licence…), or choose another graphics mode."
+        case .notShipped:
+            return "engine \(engine.id) has no \(name). Switch the environment to an engine that has it (its settings → Advanced → Engine), or choose another graphics mode."
+        }
+    }
+
+    /// The order a bottle-level setting degrades in when its renderer cannot run: KLYC-Box's
+    /// default first, then Vulkan, then Wine's own D3D, which every engine has.
+    public static let fallbackOrder: [Renderer] = [.dxmt, .dxvk, .wined3d]
+
+    /// The best renderer `engine` can run in place of `wanted`. Never `wanted` itself.
+    public static func fallback(for wanted: Renderer, in engine: InstalledEngine) -> Renderer {
+        fallbackOrder.first { $0 != wanted && $0.availability(in: engine) == .available } ?? .wined3d
+    }
+
+    public static func displayName(_ r: Renderer) -> String {
+        switch r {
+        case .wined3d: return "WineD3D"
+        case .dxmt: return "DXMT"
+        case .d3dmetal: return "D3DMetal"
+        case .dxvk: return "DXVK"
+        case .vkd3d: return "vkd3d-proton"
+        }
+    }
+}
+
+public enum WindowsVersion: String, Codable, CaseIterable, Sendable {
+    case win7, win8, win81, win10, win11
+}
+
+public enum SyncMode: String, Codable, CaseIterable, Sendable {
+    case none, esync, msync
+
+    /// The mode a Wine environment selects: msync wins, then esync, else none.
+    public init(environment env: [String: String]) {
+        if env["WINEMSYNC"] == "1" { self = .msync }
+        else if env["WINEESYNC"] == "1" { self = .esync }
+        else { self = .none }
+    }
+
+    /// The two variables that select this mode. Both are always set: Wine treats an unset
+    /// WINEMSYNC as on for msync-capable builds, so "off" has to be explicit.
+    public var environment: [String: String] {
+        switch self {
+        case .none: return ["WINEMSYNC": "0", "WINEESYNC": "0"]
+        case .esync: return ["WINEMSYNC": "0", "WINEESYNC": "1"]
+        case .msync: return ["WINEMSYNC": "1", "WINEESYNC": "0"]
+        }
+    }
+}
+
+/// A pinned program inside a bottle.
+public struct Pin: Codable, Sendable, Identifiable, Hashable {
+    public var id: UUID = UUID()
+    public var name: String
+    /// Path relative to the bottle's `drive_c`, or an absolute unix path (leading `/`)
+    /// for programs that live outside the bottle — preinstalled games on the Mac side,
+    /// which Wine reaches through its Z: drive.
+    public var path: String
+    public var arguments: [String] = []
+    public var environment: [String: String] = [:]
+    public var renderer: Renderer? = nil
+
+    public init(name: String, path: String, arguments: [String] = [], environment: [String: String] = [:], renderer: Renderer? = nil) {
+        self.name = name; self.path = path; self.arguments = arguments; self.environment = environment; self.renderer = renderer
+    }
+
+    /// Where the pin's executable actually lives for a given bottle.
+    public func executableURL(driveC: URL) -> URL {
+        path.hasPrefix("/") ? URL(fileURLWithPath: path) : driveC.appending(path: path)
+    }
+
+    /// How to store a picked file's location in a pin: drive_c-relative when the file is
+    /// inside the bottle, absolute otherwise. (Storing just a filename was the 0.7.x bug
+    /// that made "Run and add to Programs" produce dead entries for outside-the-bottle exes.)
+    public static func storagePath(for url: URL, driveC: URL) -> String {
+        let prefix = driveC.path.hasSuffix("/") ? driveC.path : driveC.path + "/"
+        // Case-insensitive: macOS APFS is case-insensitive by default, so a dropped URL's
+        // casing can differ from the canonical bottles path. A case-sensitive match there
+        // would wrongly store an absolute path for an in-bottle file.
+        if url.path.lowercased().hasPrefix(prefix.lowercased()) {
+            return String(url.path.dropFirst(prefix.count))
+        }
+        return url.path
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, path, arguments, environment, renderer }
+
+    /// Lenient decode: hand-written recipe pins may omit id/arguments/environment.
+    /// (The synthesized decoder treats defaulted non-optionals as required keys.)
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        arguments = try c.decodeIfPresent([String].self, forKey: .arguments) ?? []
+        environment = try c.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        renderer = try c.decodeIfPresent(Renderer.self, forKey: .renderer)
+    }
+}
+
+/// One-line editing of a pin's argument list. Double quotes group words; backslash
+/// escapes only a following quote (so Windows paths like C:\Games pass through
+/// untouched); everything else is literal.
+public enum ArgumentLine {
+    public static func split(_ line: String) -> [String] {
+        var args: [String] = []
+        var cur = ""
+        var inQuotes = false
+        var started = false
+        var i = line.startIndex
+        while i < line.endIndex {
+            let ch = line[i]
+            let next = line.index(after: i)
+            if ch == "\\", next < line.endIndex, line[next] == "\"" {
+                cur.append("\""); started = true
+                i = line.index(after: next)
+                continue
+            }
+            if ch == "\"" {
+                inQuotes.toggle(); started = true
+            } else if (ch == " " || ch == "\t") && !inQuotes {
+                if started { args.append(cur); cur = ""; started = false }
+            } else {
+                cur.append(ch); started = true
+            }
+            i = next
+        }
+        if started { args.append(cur) }
+        return args
+    }
+
+    public static func join(_ args: [String]) -> String {
+        args.map { a in
+            if a.isEmpty { return "\"\"" }
+            let escaped = a.replacingOccurrences(of: "\"", with: "\\\"")
+            let needsQuotes = a.contains(" ") || a.contains("\t")
+            return needsQuotes ? "\"\(escaped)\"" : escaped
+        }.joined(separator: " ")
+    }
+}
+
+/// Persisted as `<bottle>/bottle.json` (older bottles: `gin.json`, still read as a fallback).
+public struct BottleSettings: Codable, Sendable {
+    /// 2: dxvkAsync no longer defaults on. Bottles written at 1 are migrated off once on load.
+    public var formatVersion: Int = 3
+    /// Set by the decoder when it migrated the settings; BottleStore.list() persists such bottles
+    /// so the migration runs once. Not encoded.
+    public internal(set) var needsSave = false
+    public var name: String
+    public var engineID: String
+    public var renderer: Renderer = .dxmt
+    /// True once the user explicitly chose a renderer (settings picker, CLI set/create flag).
+    /// Recipes then keep their hands off it: a launcher recipe silently replacing an explicit
+    /// choice cost a debugging session (issue #29, the AC-on-DXMT black screen).
+    public var rendererExplicit: Bool = false
+    public var windowsVersion: WindowsVersion = .win10
+    public var sync: SyncMode = .msync
+    public var metalHUD: Bool = false
+    public var advertiseAVX: Bool = false
+    /// DXVK async pipeline compilation. Off, and deliberately so.
+    ///
+    /// The name oversells it: on a pipeline miss it does not compile in the background and draw
+    /// later, it SKIPS THE DRAW and presents the frame without that geometry. Upstream DXVK has
+    /// refused the patch twice, naming multiplayer explicitly, and refused it even as an
+    /// off-by-default option; the fork that carries it tells users not to report bugs with it
+    /// enabled, and warns it may be risky in multiplayer. The engine's own built-in default is
+    /// off, so writing True was an active opt-in for every game, not stock behaviour.
+    ///
+    /// It was on for every game from 0.3.0, arriving as a trailing clause in a commit about sync
+    /// modes, and it has never been measured to help here: 16 alternated Unigine Heaven runs
+    /// through d9vk on an M1 Pro gave −0.1%, p = 0.43. Turn it on per game with a recipe
+    /// dxvkconfig step if a title ever demonstrates a win.
+    public var dxvkAsync: Bool = false
+    /// Route the game's DLSS requests through the active Metal renderer's extension bridge.
+    public var dlssEnabled: Bool = false
+    /// Cap the frame rate (0 = uncapped). Applied per renderer (DXVK_FRAME_RATE / DXMT_CONFIG).
+    public var fpsCap: Int = 0
+    /// frame generation multiplier; 1 disables it
+    public var frameGen: Int = 1
+    /// adaptive pacing: fill display slots per source frame, the multiplier is the cap
+    public var frameGenAdaptive: Bool = false
+    /// flow estimation resolution as a percentage of the frame, 25 to 100
+    public var frameGenFlowScale: Int = 100
+    /// lossless scaling's performance shader set: cheaper, lower quality
+    public var frameGenPerformance: Bool = false
+    /// force FIFO on wrapped swapchains. Off lets the game's own present mode through, so
+    /// presentation can exceed the refresh rate; only useful above 60 Hz, and it can tear.
+    public var frameGenForceVsync: Bool = true
+    /// Map the Mac Command keys to Windows Ctrl, so Cmd+C/Cmd+V/Cmd+A do what a Mac user expects
+    /// inside Windows apps. Wine's default leaves Command as Alt, which is why pasting into Steam
+    /// beeps instead of pasting. Option is mapped to Alt alongside it — without that, mapping both
+    /// Command keys leaves no way to send Alt at all (winemac.drv warns about exactly this).
+    public var commandIsControl: Bool = true
+    /// The commandIsControl value last mirrored into the prefix registry. Bottles created before
+    /// this setting existed carry nil, so the first launch after updating applies it — otherwise a
+    /// user would have to know to press Repair, which is exactly the discoverability problem this
+    /// setting exists to fix.
+    public var commandIsControlSynced: Bool?
+    /// Windows UI scale as a DPI value (LogPixels): 96 = 100% (1x), up to 240 = 250%. Above 96 the
+    /// Mac driver switches to native Retina pixels so the scaled UI stays crisp. Applied to the prefix
+    /// registry on change. Supersedes the old on/off retinaMode (which was just 96 / 192).
+    public var dpiScale: Int = 96
+    /// Native Retina pixels at 100% as well. Above 100% they are always on; at 100% they are off
+    /// unless this is set, because every Windows app then draws at half size. A game whose own
+    /// interface grows with the Windows scaling wants exactly that: the display's full pixel count
+    /// with nothing scaled up (a player at 2294x1490 found even 125% too big, 2026-09-29).
+    public var retinaAt100: Bool = false
+    /// Extra WINEDLLOVERRIDES entries, e.g. "version=n,b" for Cyber Engine Tweaks. Appended to
+    /// whatever the renderer sets, semicolon separated.
+    public var dllOverrides: String = ""
+    /// Per-app DXVK options (exe → key/value), set by recipe `dxvkconfig` steps and rendered
+    /// into dxvk.conf at every DXVK launch. Data-driven successor to hardcoded [exe] sections.
+    public var dxvkAppConfig: [String: [String: String]] = [:]
+    /// The dllOverrides value last mirrored into the prefix registry. The env var only reaches
+    /// process trees KLYC-Box spawns itself; a game started by an already-running Steam client
+    /// inherits Steam's environment from before the setting changed and never sees it
+    /// (issues #22/#25). Launches re-mirror when this differs from dllOverrides.
+    public var dllOverridesSynced: String?
+    /// What WineRunner.syncEngineAppDefaults last wrote into the prefix (engine id plus its
+    /// per-executable defaults), so a launch on the same engine skips the registry and an engine
+    /// change or a manifest update rewrites.
+    public var engineAppDefaultsSynced: String?
+    /// Game files stay inside the environment: the user's Documents is a real folder under
+    /// drive_c instead of a link to the macOS Documents (which is what wineboot makes, and why
+    /// Dark Souls' or the Sims' save folders land in ~/Documents, discussion #157). Off keeps the
+    /// link. Applied to the prefix by `UserFolders`; the saves go with the environment when it
+    /// is deleted, and the delete confirmation says so.
+    public var keepFilesInside: Bool = false
+    public var environment: [String: String] = [:]
+    /// Variables a game's recipe sets for that one game's launches, keyed by the recipe's id (the
+    /// db row's id). A recipe's environment step used to land in `environment` and reach every
+    /// program in the bottle: the Sims recipe's MVK_SHADOW_IMPORT=1 then broke DXVK's Direct3D 9
+    /// for every other game on the Wine 11 engines. Merged into the launch after
+    /// `environment`, for the game the recipe is for and nothing else.
+    public var gameEnvironment: [String: [String: String]] = [:]
+    public var pins: [Pin] = []
+    public var recipes: [String] = []
+    public var created: Date = Date()
+
+    enum CodingKeys: String, CodingKey { case formatVersion, name, engineID, renderer, rendererExplicit, windowsVersion, sync, metalHUD, advertiseAVX, dxvkAsync, dlssEnabled, fpsCap, frameGen, frameGenAdaptive, frameGenFlowScale, frameGenPerformance, frameGenForceVsync, commandIsControl, commandIsControlSynced, dpiScale, retinaAt100, dllOverrides, dxvkAppConfig, dllOverridesSynced, engineAppDefaultsSynced, keepFilesInside, environment, gameEnvironment, pins, recipes, created }
+
+    /// The variables `gameID`'s recipe scoped to it; empty for a game without any, or with no id.
+    /// The variables of several game keys at once (the db row's id and the library id), later ones on top;
+    /// an append entry ("WINEDLLOVERRIDES+") from both is joined instead of replaced.
+    public func environment(forGames ids: [String?]) -> [String: String] {
+        var out: [String: String] = [:]
+        for id in ids {
+            for (key, value) in environment(forGame: id) {
+                if key.hasSuffix("+"), let old = out[key] { out[key] = old + (key == "WINEDLLOVERRIDES+" ? ";" : ":") + value } else { out[key] = value }
+            }
+        }
+        return out
+    }
+
+    /// The key a game's frame-rate cap travels under in its scoped variables (and, unchanged, in the
+    /// launch's environment, so the client-restart rule can see it).
+    public static let gameFpsCapKey = "KLYC_FPS_CAP"
+    public static let gameFpsCapChoices = [0, 30, 40, 45, 60, 90, 120, 144, 165, 180, 240]
+
+    /// The caps to offer: the fixed list, plus the display's own refresh rate and the cap already
+    /// chosen when they are not in it (a 100 Hz or 175 Hz panel, an older setting). Sorted, with 0
+    /// (uncapped) first.
+    public static func fpsCapChoices(displayHz: Int?, current: Int?) -> [Int] {
+        var set = Set(gameFpsCapChoices)
+        if let hz = displayHz, hz >= 24, hz <= 1000 { set.insert(hz) }
+        if let current, current > 0, current <= 1000 { set.insert(current) }
+        return set.sorted()
+    }
+
+    /// The cap a game's scoped variables ask for: nil when it has none (the environment's stands),
+    /// 0 for uncapped, else frames per second. Anything else in the variable is ignored.
+    public static func gameFpsCap(in environment: [String: String]) -> Int? {
+        guard let raw = environment[gameFpsCapKey], let n = Int(raw), n >= 0, n <= 1000 else { return nil }
+        return n
+    }
+
+    public func environment(forGame gameID: String?) -> [String: String] {
+        gameID.flatMap { gameEnvironment[$0] } ?? [:]
+    }
+
+    /// Every variable name a launch in this bottle can carry beyond the engine's own: the
+    /// bottle-wide ones and every game's scoped ones. A running Steam client started for one game
+    /// carries that game's variables, and the next game must not inherit them, so the restart
+    /// rule compares all of these names, not only the bottle-wide ones.
+    public var customEnvironmentKeys: [String] {
+        Array(Set(environment.keys).union(gameEnvironment.values.flatMap(\.keys)))
+    }
+
+    public init(name: String, engineID: String) {
+        self.name = name
+        self.engineID = engineID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try c.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
+        name = try c.decode(String.self, forKey: .name)
+        engineID = try c.decode(String.self, forKey: .engineID)
+        renderer = try c.decodeIfPresent(Renderer.self, forKey: .renderer) ?? .dxmt
+        rendererExplicit = try c.decodeIfPresent(Bool.self, forKey: .rendererExplicit) ?? false
+        dxvkAppConfig = try c.decodeIfPresent([String: [String: String]].self, forKey: .dxvkAppConfig) ?? [:]
+        windowsVersion = try c.decodeIfPresent(WindowsVersion.self, forKey: .windowsVersion) ?? .win10
+        sync = try c.decodeIfPresent(SyncMode.self, forKey: .sync) ?? .msync
+        metalHUD = try c.decodeIfPresent(Bool.self, forKey: .metalHUD) ?? false
+        advertiseAVX = try c.decodeIfPresent(Bool.self, forKey: .advertiseAVX) ?? false
+        dxvkAsync = try c.decodeIfPresent(Bool.self, forKey: .dxvkAsync) ?? false
+        dlssEnabled = try c.decodeIfPresent(Bool.self, forKey: .dlssEnabled) ?? false
+        fpsCap = try c.decodeIfPresent(Int.self, forKey: .fpsCap) ?? 0
+        let decodedFrameGen = try c.decodeIfPresent(Int.self, forKey: .frameGen) ?? 1
+        frameGen = (1...4).contains(decodedFrameGen) ? decodedFrameGen : 1
+        frameGenAdaptive = try c.decodeIfPresent(Bool.self, forKey: .frameGenAdaptive) ?? false
+        let decodedFlow = try c.decodeIfPresent(Int.self, forKey: .frameGenFlowScale) ?? 100
+        frameGenFlowScale = (25...100).contains(decodedFlow) ? decodedFlow : 100
+        frameGenPerformance = try c.decodeIfPresent(Bool.self, forKey: .frameGenPerformance) ?? false
+        frameGenForceVsync = try c.decodeIfPresent(Bool.self, forKey: .frameGenForceVsync) ?? true
+        // dpiScale supersedes the old retinaMode toggle (on == 200% == LogPixels 192).
+        if let dpi = try c.decodeIfPresent(Int.self, forKey: .dpiScale) {
+            dpiScale = dpi
+        } else {
+            let legacyRetina = (try? decoder.container(keyedBy: LegacyCodingKeys.self)
+                .decodeIfPresent(Bool.self, forKey: .retinaMode)) ?? nil
+            dpiScale = legacyRetina == true ? 192 : 96
+        }
+        retinaAt100 = try c.decodeIfPresent(Bool.self, forKey: .retinaAt100) ?? false
+        dllOverrides = try c.decodeIfPresent(String.self, forKey: .dllOverrides) ?? ""
+        dllOverridesSynced = try c.decodeIfPresent(String.self, forKey: .dllOverridesSynced)
+        engineAppDefaultsSynced = try c.decodeIfPresent(String.self, forKey: .engineAppDefaultsSynced)
+        keepFilesInside = try c.decodeIfPresent(Bool.self, forKey: .keepFilesInside) ?? false
+        commandIsControl = try c.decodeIfPresent(Bool.self, forKey: .commandIsControl) ?? true
+        commandIsControlSynced = try c.decodeIfPresent(Bool.self, forKey: .commandIsControlSynced)
+        environment = try c.decodeIfPresent([String: String].self, forKey: .environment) ?? [:]
+        gameEnvironment = try c.decodeIfPresent([String: [String: String]].self, forKey: .gameEnvironment) ?? [:]
+        pins = try c.decodeIfPresent([Pin].self, forKey: .pins) ?? []
+        recipes = try c.decodeIfPresent([String].self, forKey: .recipes) ?? []
+        created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date()
+
+        // Every bottle written before format 2 carries dxvkAsync: true because that was the
+        // default, not because anyone chose it — there is no explicit-choice flag for it the way
+        // rendererExplicit exists for the renderer. Switch those off once and stamp the version,
+        // so a user who deliberately turns it back on keeps it.
+        if formatVersion < 2 {
+            dxvkAsync = false
+            formatVersion = 2
+            needsSave = true
+        }
+        // Before 0.7.x the Steam recipe wrote WINEMSYNC=0/WINEESYNC=0 into the bottle-wide
+        // environment; since 2d3fd64 they belong to the Steam pin's own launch and the bottle
+        // runs msync for games. Bottles set up before that kept the two lines, which silently
+        // turned msync off for every game while the Synchronization picker said msync (found on
+        // the maintainer's own bottle, 2026-09-04). Drop exactly that stale pair once.
+        if formatVersion < 3 {
+            if environment["WINEMSYNC"] == "0", environment["WINEESYNC"] == "0" {
+                environment.removeValue(forKey: "WINEMSYNC")
+                environment.removeValue(forKey: "WINEESYNC")
+            }
+            formatVersion = 3
+            needsSave = true
+        }
+    }
+
+    /// Legacy key for migrating pre-dpiScale bottles that stored `retinaMode`.
+    private enum LegacyCodingKeys: String, CodingKey { case retinaMode }
+}
+
+public struct Bottle: Sendable {
+    public let url: URL
+    public var settings: BottleSettings
+
+    public var name: String { settings.name }
+    public var driveC: URL { url.appending(path: "drive_c", directoryHint: .isDirectory) }
+    public var settingsURL: URL { url.appending(path: "bottle.json") }
+
+    public init(url: URL, settings: BottleSettings) {
+        self.url = url
+        self.settings = settings
+    }
+
+    public static func load(_ url: URL) throws -> Bottle {
+        let modern = url.appending(path: "bottle.json")
+        let legacy = url.appending(path: "gin.json")
+        let file = FileManager.default.fileExists(atPath: modern.path) ? modern : legacy
+        let data = try Data(contentsOf: file)
+        let settings = try JSONDecoder.klycbox.decode(BottleSettings.self, from: data)
+        return Bottle(url: url, settings: settings)
+    }
+
+    public func save() throws {
+        try JSONEncoder.klycbox.encode(settings).write(to: settingsURL, options: .atomic)
+    }
+
+    /// Environment for running something in this bottle: engine base + bottle settings + renderer + extras.
+    /// Keys ending in `+` are appended to an existing value with `:` (paths) or `;` (WINEDLLOVERRIDES).
+    /// The renderer a launch will actually use. `requested` (a per-launch or per-program choice)
+    /// is strict: when the engine cannot run it, the error says why and what to do. The bottle's
+    /// own setting (`requested == nil`) degrades instead, to the best mode the engine can run,
+    /// with a note for the log and the person: a setting is a preference, and a preference must
+    /// never leave an environment where nothing starts (#61: a recipe had set D3DMetal on a
+    /// bottle whose engine had no licence accepted for it, and every launch died before Wine).
+    public func effectiveRenderer(requested: Renderer?, engine: InstalledEngine) throws -> (renderer: Renderer, note: String?) {
+        if let requested {
+            if let why = requested.unavailableReason(in: engine) { throw KLYCError.missing(why) }
+            return (requested, nil)
+        }
+        let wanted = settings.renderer
+        guard let why = wanted.unavailableReason(in: engine) else { return (wanted, nil) }
+        let instead = Renderer.fallback(for: wanted, in: engine)
+        return (instead, "running with \(Renderer.displayName(instead)) instead of \(Renderer.displayName(wanted)): \(why)")
+    }
+
+    /// lossless scaling app id
+    public static let losslessScalingAppID = 993090
+
+    /// resolve native paths and wine drive mappings
+    private func frameGenPath(_ path: String) -> URL {
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        let pieces = path.replacingOccurrences(of: "\\", with: "/").split(separator: ":", maxSplits: 1)
+        if pieces.count == 2, pieces[0].count == 1 {
+            let drive = String(pieces[0]).lowercased()
+            if drive == "c" || drive == "z" { return resolve(windowsPath: path) }
+            return url.appending(path: "dosdevices/\(drive):")
+                .appending(path: String(pieces[1]).trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+                .resolvingSymlinksInPath()
+        }
+        return URL(fileURLWithPath: path, relativeTo: url).standardizedFileURL
+    }
+
+    private func frameGenFile(_ url: URL) -> Bool {
+        (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            && FileManager.default.isReadableFile(atPath: url.path)
+    }
+
+    public var losslessScalingDLL: URL? { losslessScalingDLL(environment: settings.environment) }
+
+    private func losslessScalingDLL(environment: [String: String]) -> URL? {
+        if let override = environment["LSFGM_DLL_PATH"], !override.isEmpty {
+            let dll = frameGenPath(override)
+            return frameGenFile(dll) ? dll : nil
+        }
+        if let root = SteamLibrary.steamRoot(of: self) {
+            var libraries = [root]
+            // check secondary steam libraries
+            if let text = try? String(contentsOf: root.appending(path: "steamapps/libraryfolders.vdf"), encoding: .utf8) {
+                let pattern = #/"path"\s+"((?:\\.|[^"\\])*)"/#
+                for match in text.matches(of: pattern) {
+                    let path = String(match.1).replacingOccurrences(of: #"\\"#, with: #"\"#)
+                        .replacingOccurrences(of: #"\""#, with: "\"")
+                    libraries.append(frameGenPath(path))
+                }
+            }
+            for library in libraries {
+                let dll = Self.losslessScalingDLL(inLibrary: library)
+                if frameGenFile(dll) { return dll }
+            }
+        }
+        // The DLL is bought on Steam, but it is read as a plain file: a copy installed in another
+        // bottle works just as well. Without this an Epic-only or GOG-only bottle cannot use frame
+        // generation even though the user owns Lossless Scaling one bottle over.
+        return siblingLosslessScalingDLL()
+    }
+
+    /// Path where the shader DLL would sit inside one Steam library directory, whatever the
+    /// install folder is named. Says nothing about whether the file is there.
+    private static func losslessScalingDLL(inLibrary library: URL) -> URL {
+        let manifest = library.appending(path: "steamapps/appmanifest_\(Self.losslessScalingAppID).acf")
+        let dir = SteamLibrary.parseManifest(manifest)?.installdir ?? "Lossless Scaling"
+        return library.appending(path: "steamapps/common/\(dir)/lsfg-vk.dll")
+    }
+
+    /// Default Steam library of every other bottle beside this one. Secondary libraries are not
+    /// followed there: their paths are Windows paths that only that bottle's drives can resolve.
+    /// Sorted by name so two bottles holding the DLL always resolve to the same one, whatever
+    /// order the filesystem reports.
+    private func siblingLosslessScalingDLL() -> URL? {
+        let parent = url.deletingLastPathComponent()
+        let others = (try? FileManager.default.contentsOfDirectory(
+            at: parent, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        for other in others.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        where other.standardizedFileURL != url.standardizedFileURL {
+            guard let root = SteamLibrary.steamRoot(driveC: other.appending(path: "drive_c")) else { continue }
+            let dll = Self.losslessScalingDLL(inLibrary: root)
+            if frameGenFile(dll) { return dll }
+        }
+        return nil
+    }
+
+    public enum FrameGenStatus: Equatable, Sendable {
+        case off
+        /// requested for this launch; runtime fallback is still possible
+        case active(multiplier: Int)
+        case unavailable(String)
+    }
+
+    /// derive status from the final launch environment
+    public func frameGenStatus(engine: InstalledEngine,
+                               environment: [String: String]? = nil) -> FrameGenStatus {
+        frameGenStatus(shim: engine.resolveLsfgShimDir(), environment: environment)
+    }
+
+    /// same, with the shim directory already resolved, so a view can pass a cached one
+    public func frameGenStatus(shim shimDir: URL?,
+                               environment: [String: String]? = nil) -> FrameGenStatus {
+        guard settings.frameGen > 1 else { return .off }
+        let env = environment ?? settings.environment
+        if let reason = env["HB_LSFG_UNAVAILABLE"] { return .unavailable(reason) }
+        guard (1...4).contains(settings.frameGen),
+              let multiplier = Int(env["LSFGM_MULTIPLIER"] ?? String(settings.frameGen)),
+              (1...4).contains(multiplier) else {
+            return .unavailable("Frame generation requires a multiplier from 1 to 4.")
+        }
+        if multiplier == 1 || env["DISABLE_LSFGM"] != nil { return .off }
+        guard let shim = shimDir else {
+            return .unavailable("This engine has no usable frame generation component. Build or install the component for this engine.")
+        }
+        if let path = env["LSFGM_MOLTENVK"], !path.isEmpty {
+            let driver = frameGenPath(path)
+            guard driver.lastPathComponent != "libMoltenVK.dylib", frameGenFile(driver),
+                  driver.resolvingSymlinksInPath() != shim.appending(path: "libMoltenVK.dylib").resolvingSymlinksInPath() else {
+                return .unavailable("The real MoltenVK override is unusable. Use a readable driver with a different filename from libMoltenVK.dylib.")
+            }
+        }
+        guard losslessScalingDLL(environment: env) != nil else {
+            if let override = env["LSFGM_DLL_PATH"], !override.isEmpty {
+                return .unavailable("The shader DLL override is not a readable file. Correct LSFGM_DLL_PATH or remove the override.")
+            }
+            return .unavailable("Install Lossless Scaling from Steam in any environment and select its lsfg-vk beta branch (Properties → Betas), or point LSFGM_DLL_PATH at its lsfg-vk.dll.")
+        }
+        return .active(multiplier: multiplier)
+    }
+
+    /// The pin a running program belongs to, by folder: a program whose Windows path lies under
+    /// a pinned program's folder (Steam's steamwebhelper.exe under Program Files (x86)\Steam) is
+    /// launched by that pin or by something the pin started, so it carries the pin's
+    /// environment, not the environment's defaults (the Steam pin forces sync off for its
+    /// browser). Pure; `argv0` is the Windows path as the process reports it.
+    public static func pin(owning argv0: String, in pins: [Pin]) -> Pin? {
+        let norm = { (p: String) -> String in p.replacingOccurrences(of: "\\", with: "/").lowercased() }
+        let program = norm(argv0)
+        // Longest folder wins when pins nest.
+        return pins.filter { pin in
+            let folder = norm(pin.path).split(separator: "/").dropLast().joined(separator: "/")
+            return !folder.isEmpty && program.contains("/" + folder + "/")
+        }.max { a, b in a.path.count < b.path.count }
+    }
+
+    public func environment(engine: InstalledEngine, renderer: Renderer? = nil, extra: [String: String] = [:]) throws -> [String: String] {
+        let effective = try effectiveRenderer(requested: renderer, engine: engine).renderer
+        var env = engine.baseEnvironment()
+        env["WINEPREFIX"] = url.path
+        env["WINEDEBUG"] = "fixme-all"
+        // Explicit 0s matter: Steam's CEF webhelper hangs under msync/esync on Wine 10 (see recipes/launchers/steam.json).
+        switch settings.sync {
+        case .none: env["WINEMSYNC"] = "0"; env["WINEESYNC"] = "0"
+        case .esync: env["WINEESYNC"] = "1"; env["WINEMSYNC"] = "0"
+        case .msync: env["WINEMSYNC"] = "1"; env["WINEESYNC"] = "0"
+        }
+        if settings.metalHUD { env["MTL_HUD_ENABLED"] = "1" }
+        if settings.advertiseAVX { env["ROSETTA_ADVERTISE_AVX"] = "1" }
+        // OpenGL games that ask for a 3.2+ core context without the forward-compatible bit get NULL
+        // from Wine's Mac driver ("OS X only supports forward-compatible 3.2+ contexts") and crash
+        // on the first GL call. macOS makes every 3.2+ core context forward-compatible anyway, so the
+        // CrossOver switch the engine's winemac.so carries adds the bit for them (Tomb Raider IV-VI
+        // Remastered, upstream#136). It touches nothing that succeeded before.
+        env["CX_FWD_COMPAT_GL_CTX"] = "1"
+        let r = effective
+        // The async toggle travels in the generated dxvk.conf, NOT the DXVK_ASYNC env var:
+        // the async fork reads `env == "1" || config.enableAsync`, so an env 1 can never be
+        // overridden for a single game, while the conf's [csgo.exe] section can (issue #21).
+        // WineRunner writes the file before each dxvk launch.
+        // Every renderer but wined3d now reaches DXVK's d3d9 (see withD9VK), so the config and
+        // the per-process log must follow it. Gating these on `== .dxvk` left D3D9 titles on a
+        // dxmt or d3dmetal bottle running DXVK with no per-game profile and no log at all.
+        if r != .wined3d {
+            env["DXVK_CONFIG_FILE"] = Self.dxvkConfigWindowsPath
+            // DXVK also writes a per-process <exe>_d3d9.log naming the backend, the config it
+            // read and the device it got. Pointing it inside the bottle gives KLYC-Box the one
+            // artifact that survives a game started by a launcher client KLYC-Box did not spawn —
+            // the case where the game has no wine log of its own at all (issue #21).
+            env["DXVK_LOG_PATH"] = Self.dxvkLogWindowsPath
+            // DXMT writes the same kind of per-process file when asked; it is the one artifact
+            // that says which Direct3D implementation actually served a process (Wine's load
+            // trace names overlay builtins by their Windows path, so it cannot tell).
+            env["DXMT_LOG_PATH"] = Self.dxvkLogWindowsPath
+        }
+        // The game's own cap (`KLYC_FPS_CAP` in its scoped variables, 0 for uncapped) wins over
+        // the environment's. It is stored as a number, not as the renderer's variable, because
+        // which renderer serves the game is decided at launch and can change under it.
+        let cap = BottleSettings.gameFpsCap(in: extra) ?? settings.fpsCap
+        if cap > 0 {
+            switch r {
+            case .dxvk: env["DXVK_FRAME_RATE"] = String(cap)
+            case .vkd3d: env["DXVK_FRAME_RATE"] = String(cap); env["VKD3D_FRAME_RATE"] = String(cap)
+            case .dxmt: env["DXMT_CONFIG"] = "d3d11.preferredMaxFrameRate=\(cap);"
+            case .d3dmetal:
+                env["DXMT_CONFIG"] = "d3d11.preferredMaxFrameRate=\(cap);" // 32-bit titles on d3dmetal run on dxmt
+                // D3DMetal reads its own cap (D3DMetal 4, the GPTK 4 engines; earlier builds ignore
+                // it). Without it the cap never reached a 64-bit game in this mode.
+                env["D3DM_MAX_FPS"] = String(cap)
+            default: break
+            }
+        }
+        // Wine's menu builder writes .lnk shortcuts and app bundles onto the macOS Desktop and
+        // into ~/Applications for every installer that asks. Sikarugir's engines leave the
+        // program out; the CrossOver-tree engine ships it, and three launcher installers put
+        // shortcuts on the Desktop during its first day of testing (2026-09-04). Off everywhere:
+        // a bottle's programs belong in KLYC-Box's library, not on the user's Desktop.
+        // merge prepends, and Wine's last entry for a DLL wins, so KLYC-Box's default goes in
+        // after the bottle's own overrides to end up first in the string: a user who lists
+        // winemenubuilder.exe themselves gets their way.
+        if !settings.dllOverrides.isEmpty { merge(&env, ["WINEDLLOVERRIDES+": settings.dllOverrides]) }
+        merge(&env, ["WINEDLLOVERRIDES+": "winemenubuilder.exe=d"])
+        merge(&env, settings.environment)
+        merge(&env, try effective.environment(engine: engine))
+        merge(&env, extra)
+        // KLYC_FPS_CAP stays in the environment on purpose: Steam's restart rule compares a game's
+        // scoped variables between the running client and the next launch, and a game inherits
+        // the client's environment. Without the variable to compare, a game capped at 30 would
+        // hand its cap to the next game launched through the same client. Wine ignores it.
+        // CrossOver's DLSS switch enables the renderer's NVIDIA extension bridge. DXMT ships
+        // its DLLs under their normal names; Apple's D3DMetal bridge is named nvngx-on-metalfx
+        // and is exposed as nvngx.dll in this bottle at launch (see prepareDLSSBridge).
+        // Gate the environment by the effective renderer, including per-game overrides.
+        if settings.dlssEnabled, supportsDLSS(engine: engine, renderer: r) {
+            switch r {
+            case .dxmt:
+                env["DXMT_ENABLE_NVEXT"] = "1"
+                merge(&env, ["WINEDLLOVERRIDES+": "nvapi64,nvngx=n,b"])
+            case .d3dmetal:
+                env["D3DM_ENABLE_METALFX"] = "1"
+                if needsDLSSBridgeAliases(engine: engine) {
+                    let aliases = url.appending(path: ".klyc-dlss/wine").path
+                    merge(&env, ["WINEDLLPATH_PREPEND+": aliases])
+                }
+                merge(&env, ["WINEDLLOVERRIDES+": "nvapi64,nvngx=n,b"])
+            default:
+                break
+            }
+        }
+        // apply frame generation after all overrides
+        env.removeValue(forKey: "HB_LSFG_UNAVAILABLE")
+        let shimDir = engine.resolveLsfgShimDir()
+        let frameGeneration = frameGenStatus(shim: shimDir, environment: env)
+        if case .active(let multiplier) = frameGeneration,
+           let shim = shimDir, let dll = losslessScalingDLL(environment: env) {
+            let existing = (env["DYLD_LIBRARY_PATH"] ?? "").split(separator: ":").map(String.init)
+            env["DYLD_LIBRARY_PATH"] = ([shim.path] + existing.filter { $0 != shim.path }).joined(separator: ":")
+            // every renderer gets the same dylib inserted: metal renderers to hook CAMetalLayer, the rest for OpenGL games
+            let dylib = shim.appending(path: "libMoltenVK.dylib").path
+            let inserted = (env["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":").map(String.init)
+            env["DYLD_INSERT_LIBRARIES"] = ([dylib] + inserted.filter { $0 != dylib }).joined(separator: ":")
+            switch r {
+            case .dxmt, .d3dmetal:
+                env["LSFGM_METAL"] = "1"
+                env.removeValue(forKey: "LSFGM_OPENGL")
+            case .wined3d:
+                env.removeValue(forKey: "LSFGM_METAL")
+                env["LSFGM_OPENGL"] = "1"
+            case .dxvk, .vkd3d:
+                env.removeValue(forKey: "LSFGM_METAL")
+                env["LSFGM_OPENGL"] = "1"
+            }
+            env["LSFGM_MOLTENVK"] = env["LSFGM_MOLTENVK"].flatMap { $0.isEmpty ? nil : frameGenPath($0).path }
+                ?? shim.appending(path: InstalledEngine.lsfgRealDriverName).path
+            env["LSFGM_ENV"] = "1"
+            env["LSFGM_MULTIPLIER"] = String(multiplier)
+            env["LSFGM_DLL_PATH"] = dll.path
+            if env["LSFGM_PACING_MODE"] == nil { env["LSFGM_PACING_MODE"] = settings.frameGenAdaptive ? "adaptive" : "vsync" }
+            if env["LSFGM_FLOW_SCALE"] == nil, settings.frameGenFlowScale < 100 { env["LSFGM_FLOW_SCALE"] = String(format: "%.2f", Double(settings.frameGenFlowScale) / 100) }
+            if env["LSFGM_PERFORMANCE_MODE"] == nil, settings.frameGenPerformance { env["LSFGM_PERFORMANCE_MODE"] = "1" }
+            if env["LSFGM_OVERRIDE_PRESENT_MODE"] == nil, !settings.frameGenForceVsync { env["LSFGM_OVERRIDE_PRESENT_MODE"] = "0" }
+            if env["LSFGM_LOG_FILE"] == nil { env["LSFGM_LOG_FILE"] = dxvkLogURL.appending(path: "lsfg-metal.log").path }
+        } else {
+            env.removeValue(forKey: "LSFGM_ENV")
+            env.removeValue(forKey: "LSFGM_PROFILE")
+            env.removeValue(forKey: "LSFGM_METAL")
+            env.removeValue(forKey: "LSFGM_OPENGL")
+            // keep unavailable settings disabled
+            env["DISABLE_LSFGM"] = "1"
+            if case .unavailable(let reason) = frameGeneration { env["HB_LSFG_UNAVAILABLE"] = reason }
+        }
+        // Wine's Mac audio driver let the device pull its whole buffer at once, 10.7 ms at 48 kHz,
+        // more than a game that keeps one 10 ms period queued has, and played the shortfall as
+        // silence: 324 dropouts in two minutes of Counter-Strike 2's menu (upstream#127, Deadlock
+        // #187). An engine that ships libhbaudiobuf.dylib gets it inserted into Wine's processes,
+        // where it caps the audio unit's buffer at 5 ms. HB_AUDIOBUF=0 in an environment's
+        // variables leaves it out.
+        if let lib = engine.audioBufferLibrary, env["HB_AUDIOBUF"] != "0" {
+            let inserted = (env["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":").map(String.init)
+            env["DYLD_INSERT_LIBRARIES"] = ([lib.path] + inserted.filter { $0 != lib.path }).joined(separator: ":")
+        }
+        return env
+    }
+
+    /// The renderer-specific bridge files that make the DLSS switch actionable in this engine.
+    public func supportsDLSS(engine: InstalledEngine, renderer: Renderer? = nil) -> Bool {
+        let selected = renderer ?? settings.renderer
+        guard let dir = engine.rendererDir(selected.rawValue) else { return false }
+        switch selected {
+        case .dxmt:
+            return FileManager.default.fileExists(atPath: dir.appending(path: "wine/x86_64-windows/nvngx.dll").path)
+        case .d3dmetal:
+            let windows = ["nvngx.dll", "nvngx-on-metalfx.dll"].contains {
+                FileManager.default.fileExists(atPath: dir.appending(path: "wine/x86_64-windows/\($0)").path)
+            }
+            let unix = ["nvngx.so", "nvngx-on-metalfx.so"].contains {
+                FileManager.default.fileExists(atPath: dir.appending(path: "wine/x86_64-unix/\($0)").path)
+            }
+            return windows && unix
+        default:
+            return false
+        }
+    }
+
+    private func needsDLSSBridgeAliases(engine: InstalledEngine) -> Bool {
+        guard let dir = engine.rendererDir("d3dmetal") else { return false }
+        let wine = dir.appending(path: "wine")
+        let needsWindowsAlias = !FileManager.default.fileExists(atPath: wine.appending(path: "x86_64-windows/nvngx.dll").path)
+            && FileManager.default.fileExists(atPath: wine.appending(path: "x86_64-windows/nvngx-on-metalfx.dll").path)
+        let needsUnixAlias = !FileManager.default.fileExists(atPath: wine.appending(path: "x86_64-unix/nvngx.so").path)
+            && FileManager.default.fileExists(atPath: wine.appending(path: "x86_64-unix/nvngx-on-metalfx.so").path)
+        return needsWindowsAlias || needsUnixAlias
+    }
+
+    /// Windows path of the generated DXVK config inside the prefix.
+    public static let dxvkConfigWindowsPath = #"C:\klycbox\dxvk.conf"#
+    /// Unix location of the same file.
+    public var dxvkConfigURL: URL { driveC.appending(path: "klycbox/dxvk.conf") }
+    /// Windows path DXVK writes its per-process logs to, and its Unix location.
+    public static let dxvkLogWindowsPath = #"C:\klycbox\logs"#
+    public var dxvkLogURL: URL { driveC.appending(path: "klycbox/logs") }
+
+    /// Contents of the per-bottle dxvk.conf. The global line carries the bottle's async
+    /// toggle. The [csgo.exe] section is the issue #21 profile: legacy CS:GO (32-bit D3D9)
+    /// froze at map-load "Initializing game data" on defaults. Async compile off there
+    /// (the d9vk fork's own wrapper never enables async; the first map load's pipeline
+    /// burst is exactly the freeze point), 2 GB reported texture memory (DXVK's standard
+    /// 32-bit address-space mitigation, cf. its built-in Vampire profile), and a Radeon
+    /// device id to pair with the AMD vendor id DXVK's built-in csgo profile already
+    /// forces. Later lines win, so the section must follow the global.
+    ///
+    /// Two of those three are unvalidated, and the device id's stated reason was wrong.
+    /// It read "so the game's dxsupport.cfg picks a concrete GPU profile instead of
+    /// unknown-device failsafe". 0x73BF is a 2019 Navi part; in the only Source
+    /// dxsupport.cfg on hand (Portal's, which knows no id above 0x9715) it falls into
+    /// `"ATI Unknown"` — VendorID 0x1002, MinDeviceID 0x0000, MaxDeviceID 0xffff,
+    /// MakeMeLast 1 — which IS the failsafe bucket, the opposite of the claim. CS:GO
+    /// ships its own newer dxsupport.cfg that may well know the part, and nobody has
+    /// checked, so the honest status is unverified rather than disproven. The 2 GB cap
+    /// has never been validated either: measured on an M1 Pro, a Source D3D9 map load
+    /// took 11.1 s with and without it. Both stay because they are individually
+    /// defensible, not because they are known to help. Do not restate the old rationale.
+    static let csgoFallback = ["dxvk.enableAsync": "False", "d3d9.maxAvailableMemory": "2048",
+                               "d3d9.customDeviceId": "73BF"]
+
+    /// The generated conf as a launch header quotes it: without the comment lines, and without
+    /// the [csgo.exe] section when it is only the fallback above, which is the same in every
+    /// environment and made a player ask why their World of Warships log mentioned CS:GO
+    /// (Discord, 2026-10-01). A section a recipe set or changed stays, since that is per-game.
+    public static func dxvkConfigHeaderLines(_ conf: String) -> [String] {
+        let fallbackLines = csgoFallback.map { "\($0.key) = \($0.value)" }.sorted()
+        var out: [String] = []
+        var section: [String] = []   // the section being read, its [name] line first
+        func flush() {
+            if !(section.first == "[csgo.exe]" && section.dropFirst().sorted() == fallbackLines) { out += section }
+            section = []
+        }
+        for raw in conf.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            if line.hasPrefix("[") { flush(); section = [line]; continue }
+            if section.isEmpty { out.append(line) } else { section.append(line) }
+        }
+        flush()
+        return out
+    }
+
+    public static func dxvkConfig(async: Bool, appConfig: [String: [String: String]] = [:]) -> String {
+        // FALLBACK, kept deliberately (do not delete yet): legacy CS:GO can only be started
+        // from Steam's own launch-option chooser, so it never passes the app's Play-gate and a
+        // bottle without the counter-strike-2 recipe still needs these values. Re-confirmed
+        // 2026-08-30: even with the csgo_legacy beta branch selected, `steam -applaunch 730`
+        // starts cs2.exe, because -applaunch cannot answer the chooser ("LaunchApp waiting for
+        // user response" in Steam's own log) and takes the default option.
+        // NOTE: async is NOT the cause of the #21 map-load freeze. The logs show this config
+        // reaching csgo.exe exactly as designed and the game froze anyway. These values stay
+        // because each is individually sound, not because they fixed it. The same knowledge
+        // (recipe dxvkconfig step); recipe-set values OVERRIDE this fallback. Remove after
+        // a deprecation window once recipe coverage is the norm.
+        var merged = appConfig
+        merged["csgo.exe"] = csgoFallback.merging(merged["csgo.exe"] ?? [:]) { _, recipe in recipe }
+
+        var out = """
+        # Written by KLYC-Box before each DXVK launch — edits here are overwritten.
+        # The bottle's "DXVK async shader compilation" toggle sets the global line;
+        # per-app sections come from recipe dxvkconfig steps (plus the csgo fallback).
+        dxvk.enableAsync = \(async ? "True" : "False")
+
+        """
+        for exe in merged.keys.sorted() {
+            out += "\n[\(exe)]\n"
+            for key in merged[exe]!.keys.sorted() {
+                out += "\(key) = \(merged[exe]![key]!)\n"
+            }
+        }
+        return out
+    }
+
+    /// Writes the generated dxvk.conf into the prefix (idempotent, compare-then-write).
+    public func writeDxvkConfig() throws {
+        let dir = dxvkConfigURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // DXVK only writes its per-process log if the directory exists.
+        try FileManager.default.createDirectory(at: dxvkLogURL, withIntermediateDirectories: true)
+        let content = Self.dxvkConfig(async: settings.dxvkAsync, appConfig: settings.dxvkAppConfig)
+        if (try? String(contentsOf: dxvkConfigURL, encoding: .utf8)) != content {
+            try content.write(to: dxvkConfigURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Apple's GPTK ships the MetalFX NGX bridge under its descriptive filename. Wine looks
+    /// for the standard nvngx module name, so expose aliases inside this bottle (never the shared
+    /// engine or Windows system32). The aliases are only put on the DLL search path when the
+    /// setting is enabled and D3DMetal is the effective renderer.
+    public func prepareDLSSBridge(engine: InstalledEngine, renderer: Renderer) throws {
+        guard settings.dlssEnabled, renderer == .d3dmetal,
+              supportsDLSS(engine: engine, renderer: renderer),
+              let dir = engine.rendererDir("d3dmetal") else { return }
+        let sources = [
+            (dir.appending(path: "wine/x86_64-windows/nvngx.dll"), dir.appending(path: "wine/x86_64-windows/nvngx-on-metalfx.dll"), "x86_64-windows/nvngx.dll"),
+            (dir.appending(path: "wine/x86_64-unix/nvngx.so"), dir.appending(path: "wine/x86_64-unix/nvngx-on-metalfx.so"), "x86_64-unix/nvngx.so"),
+        ]
+        let fm = FileManager.default
+        let wineDir = url.appending(path: ".klyc-dlss/wine", directoryHint: .isDirectory)
+        for (direct, renamed, relativeTarget) in sources {
+            if fm.fileExists(atPath: direct.path) { continue }
+            guard fm.fileExists(atPath: renamed.path) else {
+                throw KLYCError.missing("D3DMetal's DLSS-to-MetalFX bridge (nvngx-on-metalfx)")
+            }
+            let target = wineDir.appending(path: relativeTarget)
+            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let existing = try? fm.destinationOfSymbolicLink(atPath: target.path),
+               URL(fileURLWithPath: existing, relativeTo: target.deletingLastPathComponent()).standardizedFileURL == renamed.standardizedFileURL {
+                continue
+            }
+            if fm.fileExists(atPath: target.path) || (try? fm.destinationOfSymbolicLink(atPath: target.path)) != nil {
+                try fm.removeItem(at: target)
+            }
+            try fm.createSymbolicLink(at: target, withDestinationURL: renamed)
+        }
+    }
+
+    private func merge(_ env: inout [String: String], _ add: [String: String]) {
+        for (k, v) in add {
+            if k.hasSuffix("+") {
+                let key = String(k.dropLast())
+                let sep = key == "WINEDLLOVERRIDES" ? ";" : ":"
+                env[key] = [v, env[key]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: sep)
+            } else {
+                env[k] = v
+            }
+        }
+    }
+
+    /// Convert a Windows path like `C:\Program Files (x86)\Steam\steam.exe` to a file URL inside the bottle.
+    public func resolve(windowsPath: String) -> URL {
+        var p = windowsPath
+        if p.lowercased().hasPrefix("z:") {
+            // Wine maps Z:\ to the unix root — hand back the real absolute path.
+            let rest = String(p.dropFirst(2)).replacingOccurrences(of: "\\", with: "/")
+            return URL(fileURLWithPath: rest.isEmpty ? "/" : rest)
+        }
+        if p.lowercased().hasPrefix("c:") { p = String(p.dropFirst(2)) }
+        p = p.replacingOccurrences(of: "\\", with: "/")
+        if p.hasPrefix("/") { p.removeFirst() }
+        return driveC.appending(path: p)
+    }
+}
+
+extension JSONEncoder {
+    static var klycbox: JSONEncoder {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }
+}
+
+extension JSONDecoder {
+    static var klycbox: JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
+}
+
+public extension Renderer {
+    /// The mode a launch runs with, most specific choice first: the caller's (the D3DMetal ask's
+    /// "play with the other mode"), the game's own override, the database row unless the
+    /// environment's mode is an explicit choice, a pinned program's own, then the environment's.
+    /// A native-Vulkan title ignores rows and overrides: no Direct3D layer draws it, so the
+    /// environment's mode is as good as any (#44).
+    static func choose(requested: Renderer?, gameOverride: Renderer?, row: Renderer?, environmentExplicit: Bool,
+                       pin: Renderer?, environment: Renderer, nativeVulkan: Bool = false) -> Renderer {
+        if nativeVulkan { return requested ?? environment }
+        return requested ?? gameOverride ?? (environmentExplicit ? nil : row) ?? pin ?? environment
+    }
+
+    /// What a Play asks the launch for, before rows, pins and the environment are weighed: the
+    /// caller's mode, else the game's own override (none for a native-Vulkan title, as in
+    /// `choose`). The override has to travel with the launch as a request. Until 2026-09-30 it
+    /// only fed the licence check, so the launch fell back to the row or the environment and
+    /// restarted Steam to match that: a game set to DXMT ran on DXVK with no word said
+    /// (upstream#195, Kingdom Hearts), ever since per-game modes existed.
+    static func launchRequest(requested: Renderer?, gameOverride: Renderer?, nativeVulkan: Bool = false) -> Renderer? {
+        requested ?? (nativeVulkan ? nil : gameOverride)
+    }
+}

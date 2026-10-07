@@ -1,0 +1,29 @@
+{
+  "id": "counter-strike",
+  "title": "Counter-Strike",
+  "steam_appid": 10,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": {
+    "names": [
+      "VAC"
+    ],
+    "macVerdict": "warning",
+    "note": "VAC is userspace and runs under Wine; Counter-Strike 2 plays online under it here"
+  },
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  },
+  "provenance": "Reported by JLiveOf (upstream#240, 2026-09-27), Apple M1, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT mode, the steam and vcrun2022 recipes, rated 4 of 5 after 2 minutes: very playable, never quite 60 fps. Not verified by the maintainer. A second report by EusGoed (upstream#289, 2026-10-03), Apple M4 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, wined3d as the environment's mode with a dxgi=n DLL override and the vcrun2022 recipe, rated 5 of 5 after 10 minutes.",
+  "notes": "The 2000 original (GoldSrc). Reported very playable on the default engine r11 in DXMT mode on an M1, below 60 fps but not needing it. Steam also sells a native Mac build of it, which KLYC-Box points out on the game's page since 0.9.39. Nothing was measured here. A second report rates it perfect after 10 minutes in wined3d mode on an M4 Pro. The game draws through OpenGL, which Wine hands to the Mac's own OpenGL whatever the graphics mode, so the mode is unlikely to matter for it, an inference from the two reports rather than a measurement.",
+  "knownIssues": [
+    {
+      "symptom": "Frame rate stays under 60 (reported on an M1, engine r11, DXMT mode).",
+      "cause": "not measured.",
+      "fix": "none needed per the reporter. The native Mac build on Steam is the other route."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

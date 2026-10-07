@@ -1,0 +1,27 @@
+{
+  "games": {
+    "steam:244210": {
+      "folders": [
+        { "title": "Arabalar", "path": "content/cars" },
+        { "title": "Pistler", "path": "content/tracks" },
+        { "title": "Python uygulamaları", "path": "apps/python" },
+        { "title": "Sistem ayarları", "path": "system/cfg" }
+      ],
+      "notes": [
+        "Araba ve pist modlarını kendi klasörleriyle birlikte Arabalar ve Pistler'e ekle: her mod kendi adında bir klasördür.",
+        "Content Manager gibi araçlar oyunun yolunu sorarsa, yukarıdaki Windows yolunu yapıştır. Programı 'Program çalıştır' ile bu oyunun ortamında aç.",
+        "Custom Shaders Patch dwrite.dll bırakır. Bu oyunun tarifi acs.exe için dwrite ayarını zaten yapar; CSP bazı Windows yazı tiplerini (Segoe UI, Consolas, Orbitron) ister, ortamın C:\\windows\\Fonts klasörüne koymazsan oyun açılışta çöker."
+      ]
+    },
+    "steam:1145360": {
+      "folders": [
+        { "title": "İçerik", "path": "Content" },
+        { "title": "Modlar", "path": "Content/Mods" }
+      ],
+      "notes": [
+        "Modlar genellikle Content/Mods içine, kendi klasörleriyle konur. Çoğu mod, Mod Importer adlı aracı çalıştırmanı ister: onu İçerik klasörüne ekleyip 'Program çalıştır' ile aç.",
+        "Bu bilgi genel bir rehberdir; oyunun ve modun sürümüne göre değişebilir. Modun kendi açıklamasını esas al."
+      ]
+    }
+  }
+}

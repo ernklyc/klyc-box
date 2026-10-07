@@ -1,0 +1,13 @@
+{
+  "id": "the-sims-2-legacy-collection",
+  "title": "The Sims 2 Legacy Collection",
+  "steam_appid": 3314070,
+  "status": "community",
+  "renderer": "wined3d",
+  "anticheat": null,
+  "provenance": "Reported by kabilza (upstream#238, 2026-09-27), Apple M4, macOS 26.5, KLYC-Box 0.9.33, engine x64-crossover26.3-r11, Wine's own Direct3D, AVX advertised, frame rate limit 60, the steam and vcrun2022 recipes, rated 5 of 5 after 6 minutes. Not verified by the maintainer.",
+  "notes": "Reported perfect on Wine's own Direct3D on the Wine 11 engine r11 with the frame rate limit at 60, after a short session on an M4. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

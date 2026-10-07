@@ -1,0 +1,17 @@
+{
+  "id": "prey-2017",
+  "title": "Prey (2017)",
+  "steam_appid": 480490,
+  "status": "community",
+  "renderer": "dxmt",
+  "provenance": "community consensus (AppleGamingWiki / r-macgaming / MacPlay), unverified by KLYC-Box",
+  "notes": "works",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "PunkBuster"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; Linux/Proton support does not extend to macOS — userspace path works for some titles"
+  }
+}

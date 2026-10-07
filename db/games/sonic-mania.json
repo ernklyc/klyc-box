@@ -1,0 +1,13 @@
+{
+  "id": "sonic-mania",
+  "title": "Sonic Mania",
+  "steam_appid": 584400,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by Sainijon (upstream#256, 2026-09-29), Apple M1, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, recipes steam, vcrun2022, corefonts and battle-net (DXMT_ALLOW_CROSS_PROCESS_SWAPCHAIN=1 in the environment), rated 5 of 5 after 2 minutes. JLiveOf (upstream#261, 2026-09-29), Apple M1, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, recipes steam, vcrun2022, controller-sdl, corefonts and fakejapanese, rated 5 of 5 after 15 minutes. Not verified by the maintainer.",
+  "notes": "Reported perfect twice on DXMT on an M1 with the default engine r11. The second report played Green Hill, Chemical Plant and Studiopolis and a 3D Chaos Emerald special stage at 60 fps with no drops by the reporter's account. Nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

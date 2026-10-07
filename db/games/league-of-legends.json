@@ -1,0 +1,23 @@
+{
+  "id": "league-of-legends",
+  "title": "League of Legends",
+  "steam_appid": null,
+  "status": "blocked-anticheat",
+  "renderer": null,
+  "provenance": "kernel anti-cheat, structurally impossible under Wine",
+  "notes": "Riot Vanguard since 2024",
+  "lastVerified": null,
+  "anticheat": {
+    "names": [
+      "Vanguard"
+    ],
+    "macVerdict": "blocked",
+    "note": "kernel anti-cheat; cannot work under Wine on macOS"
+  },
+  "nativeMac": {
+    "available": true,
+    "where": "Riot client",
+    "url": "https://www.leagueoflegends.com/",
+    "note": "Riot ships an official macOS client, and embedded Vanguard came to macOS in 2025. Install that instead of trying to run the Windows build."
+  }
+}

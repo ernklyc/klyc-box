@@ -1,0 +1,13 @@
+{
+  "name": "klyc-box-reports",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test aggregate.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-klyc-box \"node --test rules.test.mjs rest.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0"
+  }
+}

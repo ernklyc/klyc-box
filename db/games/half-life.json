@@ -1,0 +1,17 @@
+{
+  "id": "half-life",
+  "title": "Half-Life",
+  "steam_appid": 70,
+  "status": "community",
+  "renderer": "dxvk",
+  "anticheat": null,
+  "nativeMac": {
+    "available": true,
+    "where": "Steam"
+  },
+  "provenance": "Reported by Site-Ark-M (upstream#304, 2026-10-04), Apple M3 Max, macOS 27.0.1, KLYC-Box 0.10.2, engine x64-sikarugir10.0_6-r17, DXVK as the environment's mode with KLYC-Box's frame cap at 60, recipes steam and vcrun2022, rated 5 of 5 after 8 minutes. Not verified by the maintainer.",
+  "notes": "The 1998 original (GoldSrc). Reported perfect after 8 minutes on an M3 Max on the default engine r17 with the environment on DXVK and the frame cap at 60. The game draws through OpenGL, which Wine hands to the Mac's own OpenGL whatever the graphics mode, so the mode is unlikely to matter for it, an inference rather than a measurement, and the mode here is the one reported. Steam also sells a native Mac build of it. Whether the game held the 60 cap was not said and nothing was measured here.",
+  "knownIssues": [],
+  "launchArgs": null,
+  "lastVerified": null
+}

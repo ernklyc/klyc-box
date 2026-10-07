@@ -1,0 +1,27 @@
+{
+  "id": "vindictus",
+  "title": "Vindictus",
+  "steam_appid": 212160,
+  "status": "community",
+  "renderer": null,
+  "anticheat": {
+    "names": [
+      "Nexon Game Security"
+    ],
+    "macVerdict": "warning",
+    "note": "anti-cheat present; it runs on Linux through Proton, which does not settle macOS"
+  },
+  "provenance": "Reported by Yeetmaster on KLYC-Box's Discord (2026-09-30): on the Wine 11 engine (x64-crossover26.3) with DXMT the Steam connector opens and a server can be chosen, on the default engine it runs with no window. Measured on an M4 with macOS 27.0 on 2026-10-01 up to the connector's Nexon sign-in screen, on engines r15 and r12. The game itself was not played by the maintainer.",
+  "notes": "Vindictus starts through Nexon's Steam connector (nxsteam.exe), a small Electron app that asks for a Nexon account and a server before the game opens. KLYC-Box adds Chromium's --in-process-gpu switch when you press Play, which makes the connector's window appear on the default engine. Measured here up to the Nexon sign-in screen only, the game past it is the reporter's.",
+  "knownIssues": [
+    {
+      "symptom": "Nothing appears after pressing Play on the default engine. Nexon's Steam connector runs in the background with no window",
+      "cause": "The connector is an Electron app. Its separate GPU process draws into a window the main process owns, and Wine 10 cannot present across processes like that, so the window stays transparent (the Wine 11 engine carries a patch for it). Measured on an M4 with macOS 27.0 on 2026-10-01: invisible on engine r15, visible on r12, visible on both with --in-process-gpu",
+      "fix": "KLYC-Box adds --in-process-gpu to the launch, which keeps the drawing inside the connector's own process. When starting from Steam's own window instead, put --in-process-gpu in the game's launch options (right-click Vindictus in Steam, Properties)"
+    }
+  ],
+  "launchArgs": [
+    "--in-process-gpu"
+  ],
+  "lastVerified": null
+}

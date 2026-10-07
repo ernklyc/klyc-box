@@ -1,0 +1,19 @@
+{
+  "id": "maniaplanet",
+  "title": "ManiaPlanet (Trackmania²)",
+  "steam_appid": null,
+  "status": "community",
+  "renderer": "dxmt",
+  "anticheat": null,
+  "provenance": "Reported by LotharieSlayer (upstream#247, 2026-09-28), the Trackmania² games through ManiaPlanet, Apple M1 Pro, macOS 27.0, KLYC-Box 0.9.39, engine x64-sikarugir10.0_6-r11, DXMT, sync none, recipes vcrun2022, controller-sdl, fakejapanese, corefonts and battle-net (DXMT_ALLOW_CROSS_PROCESS_SWAPCHAIN=1 set in the environment), rated 4 of 5 after 5 minutes. Not verified by the maintainer.",
+  "notes": "ManiaPlanet is Nadeo's platform that runs the Trackmania² games (Canyon, Stadium, Valley and Lagoon, each sold on Steam). Reported playable on DXMT on an M1 Pro with the default engine r11 after a five-minute session. The report does not say which title or which store. Nothing was measured here.",
+  "knownIssues": [
+    {
+      "symptom": "The interface looks stretched on screens that are not 16:9, and the resolution is only right in fullscreen (reported).",
+      "cause": "not looked at here.",
+      "fix": "play in fullscreen, per the reporter."
+    }
+  ],
+  "launchArgs": null,
+  "lastVerified": null
+}

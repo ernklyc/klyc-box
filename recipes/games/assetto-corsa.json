@@ -1,0 +1,66 @@
+{
+  "id": "assetto-corsa",
+  "kind": "game",
+  "title": "Assetto Corsa",
+  "requires": [
+    "steam",
+    "dotnet48"
+  ],
+  "renderer": "d3dmetal",
+  "steps": [
+    {
+      "type": "note",
+      "text": "Before first launch, install .NET Framework 4.8 from the bottle's Dependencies section (20 to 40 minutes; looks frozen for long stretches, let it finish). AC's launcher is a 32-bit .NET/WPF app and dies silently without it — this was the historical 'AC won't launch' failure."
+    },
+    {
+      "type": "note",
+      "text": "Use D3DMetal. Under DXMT the session loads and the engine runs (physics ticks, log fills) but nothing ever paints — black screen after clicking start. Verified on this engine 2026-08-28."
+    },
+    {
+      "type": "note",
+      "text": "The launcher's news panels can spin forever (embedded Chromium fetching old feeds). Cosmetic — Drive, Career and settings all work."
+    },
+    {
+      "type": "registry",
+      "key": "HKCU\\Software\\Wine\\AppDefaults\\acs.exe\\DllOverrides",
+      "name": "dwrite",
+      "valueType": "REG_SZ",
+      "data": "native,builtin"
+    },
+    {
+      "type": "registry",
+      "key": "HKCU\\Software\\Wine\\AppDefaults\\acs_x86.exe\\DllOverrides",
+      "name": "dwrite",
+      "valueType": "REG_SZ",
+      "data": "native,builtin"
+    },
+    {
+      "type": "note",
+      "text": "Custom Shaders Patch, if you install it through Content Manager, hooks the game through a dwrite.dll it drops next to acs.exe. Wine prefers its own dwrite unless told otherwise, so this setup lets the game's copy load first, for acs.exe only (nothing changes for a game without CSP, Wine's own dwrite is used as before). CSP then wants Windows fonts its config names, Segoe UI, Consolas and Orbitron among them, which an environment does not have and KLYC-Box cannot ship. Put them in the environment's C:\\windows\\Fonts folder (a Windows install or the community font pack has them). Without them the session crashes at start with CSP on. Measured by a player on an M1 Pro with KLYC-Box 0.10.4."
+    }
+  ],
+  "knownIssues": [
+    {
+      "symptom": "Black screen when starting a session, menu/launcher fine",
+      "cause": "DXMT on macOS 14.6: AC's D3D11 path ran but never presented on this engine (log shows the run loop ticking with heavy 'WAS LATE' spam). Not reproduced on macOS 26.6.2, where DXMT renders the session.",
+      "fix": "set the bottle renderer to d3dmetal and restart the bottle (Stop all processes first — a running Steam session keeps the old renderer)"
+    },
+    {
+      "symptom": "Launcher never appears / game won't start at all",
+      "cause": "missing .NET Framework: the stock launcher is 32-bit .NET 4 WPF and Wine-Mono has no WPF",
+      "fix": "install the dotnet48 dependency, then launch normally through Steam"
+    },
+    {
+      "symptom": "With Custom Shaders Patch installed, its apps (Pure, Pure Planner) never appear, or the session crashes at start (reported on an M1 Pro, KLYC-Box 0.10.4, upstream#243)",
+      "cause": "Wine loads its own dwrite ahead of the dwrite.dll CSP drops in the game folder, so CSP never hooks the game. Once it does load, it asks for Windows fonts the environment lacks and crashes without them.",
+      "fix": "The setup now sets dwrite to native,builtin for acs.exe. Add the fonts CSP names (Segoe UI, Consolas, Orbitron) to the environment's C:\\windows\\Fonts, then Stop All Windows Processes and start a session."
+    }
+  ],
+  "lastVerified": {
+    "date": "2026-09-02",
+    "engine": "x64-sikarugir10.0_6-r0",
+    "macos": "26.6.2 (25G83)",
+    "chip": "Apple M1 Pro",
+    "result": "dotnet48 + steam recipes; stock launcher renders (intro movie, main menu). d3dmetal: practice session (Ferrari 458, Laguna Seca) loads and runs at 1728x1117, 127-128 fps (Metal HUD), 25 min with the maintainer at the wheel, clean exit (exit 0, CLEAN EXIT in log), no full lap logged. dxmt: on this OS the same session renders and was driven, one lap logged (2:19.5), 69-136 fps, clean exit; it black-screened on macOS 14.6. Without the real .NET the launcher dies on a Mono TypeLoadException (CEF3) even though the registry shows a 4.8 Release key from Wine Mono. On macOS 14.6 (2026-08-28): 150-170 fps fullscreen under d3dmetal, clean exit."
+  }
+}

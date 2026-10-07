@@ -1,0 +1,17 @@
+{
+  "id": "god-of-war",
+  "title": "God of War",
+  "steam_appid": 1593500,
+  "status": "community",
+  "renderer": "dxmt",
+  "provenance": "community consensus (AppleGamingWiki / r-macgaming / MacPlay), unverified by KLYC-Box. Also reported by halite-inc (upstream#79, 2026-09-16), Apple M5, macOS 26.6.2, engine x64-sikarugir10.0_6-r3, D3DMetal, rated 5 of 5 after one minute on a self-built KLYC-Box carrying GPTK 4. Again by halite-inc (upstream#254, 2026-09-29), Apple M5, macOS 27.2, engine x64-crossover26.3-r10, D3DMetal, rated 5 of 5 after 36 minutes on a self-built KLYC-Box (version 0.0.0-dev).",
+  "notes": "D3D11; works Reported on the Epic copy by atkgitxp (upstream#46, 2026-09-14), Apple M4 Pro, macOS 26.6.2, KLYC-Box 0.9.9, default engine, DXMT, 37 minutes: 30 to 55 fps at 100 percent render scale, noise artifacts on Kratos and Atreus that depend on lighting and depth, and inconsistent lighting with AMD FSR on, so the reporter recommends turning FSR off. A second report from an M5 plays it on D3DMetal with the Wine 11 engine r10 for 36 minutes, rated perfect, no frame rate given.",
+  "lastVerified": null,
+  "knownIssues": [
+    {
+      "symptom": "Noise artifacts on Kratos and Atreus depending on lighting and depth on DXMT (reported on an M4 Pro)",
+      "cause": "not measured",
+      "fix": "none verified, the reporter recommends turning AMD FSR off in the game's settings, which also cured inconsistent lighting"
+    }
+  ]
+}
