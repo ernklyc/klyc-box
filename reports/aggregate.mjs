@@ -5,10 +5,15 @@
  * `minReports` reports, so a single player's answer is never published on its own.
  */
 export const MIN_REPORTS = 3;
+/** A real player does not report on more games than this; an account above it is treated as a flood and ignored. */
+export const MAX_REPORTS_PER_PLAYER = 40;
 
-export function aggregate(reports, minReports = MIN_REPORTS) {
+export function aggregate(reports, minReports = MIN_REPORTS, maxPerPlayer = MAX_REPORTS_PER_PLAYER) {
   const byGame = new Map();
+  const perPlayer = new Map();
+  for (const r of reports) if (r && r.uid) perPlayer.set(r.uid, (perPlayer.get(r.uid) ?? 0) + 1);
   for (const r of reports) {
+    if (r && r.uid && perPlayer.get(r.uid) > maxPerPlayer) continue;
     if (!Number.isInteger(r.appid) || r.appid <= 0 || typeof r.works !== "boolean" || !Number.isInteger(r.rating) || r.rating < 1 || r.rating > 5) continue;
     const g = byGame.get(r.appid) ?? { reports: 0, works: 0, ratingSum: 0 };
     g.reports += 1;

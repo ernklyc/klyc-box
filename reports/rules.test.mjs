@@ -15,15 +15,27 @@ after(async () => env.cleanup());
 beforeEach(async () => env.clearFirestore());
 
 const good = () => ({ appid: 440, works: true, rating: 4, chip: "M4", macos: "15.1", engine: "wine 10", renderer: "dxmt", note: "ok", updatedAt: serverTimestamp() });
-const as = (uid) => env.authenticatedContext(uid).firestore();
+const as = (uid) => env.authenticatedContext(uid, { firebase: { sign_in_provider: "anonymous" } }).firestore();
 
 test("a signed-in player writes their own valid report", async () => {
   await assertSucceeds(setDoc(doc(as("u1"), "reports/440_u1"), good()));
 });
-test("a player can update their own report", async () => {
+test("a player can update their own report once the cooldown has passed", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), "reports/440_u1"), { ...good(), updatedAt: new Date(Date.now() - 60_000) }));
+  await assertSucceeds(setDoc(doc(as("u1"), "reports/440_u1"), { ...good(), rating: 2 }));
+});
+test("sending again right away is refused (20 second cooldown)", async () => {
   const db = as("u1");
   await assertSucceeds(setDoc(doc(db, "reports/440_u1"), good()));
-  await assertSucceeds(setDoc(doc(db, "reports/440_u1"), { ...good(), rating: 2 }));
+  await assertFails(setDoc(doc(db, "reports/440_u1"), { ...good(), rating: 2 }));
+});
+test("only the anonymous sign-in is accepted, no other provider", async () => {
+  const other = env.authenticatedContext("u1", { firebase: { sign_in_provider: "password" } }).firestore();
+  await assertFails(setDoc(doc(other, "reports/440_u1"), good()));
+});
+test("appid stays inside the real Steam range", async () => {
+  await assertSucceeds(setDoc(doc(as("u1"), "reports/19999999_u1"), { ...good(), appid: 19999999 }));
+  await assertFails(setDoc(doc(as("u1"), "reports/20000000_u1"), { ...good(), appid: 20000000 }));
 });
 test("anonymous (signed out) cannot write", async () => {
   await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), "reports/440_u1"), good()));

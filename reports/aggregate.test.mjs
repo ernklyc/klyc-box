@@ -29,3 +29,12 @@ test("the minimum can be raised", () => {
   const out = aggregate([r(1, true, 5), r(1, true, 5), r(1, true, 5)], 5);
   assert.deepEqual(out.games, {});
 });
+
+test("an account that floods the collection is ignored, honest players still count", async () => {
+  const { MAX_REPORTS_PER_PLAYER } = await import("./aggregate.mjs");
+  const flood = Array.from({ length: MAX_REPORTS_PER_PLAYER + 1 }, (_, i) => ({ appid: 1000 + i, works: true, rating: 5, uid: "spam" }));
+  const honest = ["a", "b", "c"].map((uid) => ({ appid: 7, works: true, rating: 4, uid }));
+  const out = aggregate([...flood, ...honest]);
+  assert.deepEqual(Object.keys(out.games), ["7"]);
+  assert.equal(out.games[7].reports, 3);
+});

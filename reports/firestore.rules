@@ -11,7 +11,7 @@ service cloud.firestore {
     function validReport(r) {
       return r.keys().hasOnly(['appid', 'works', 'rating', 'chip', 'macos', 'engine', 'renderer', 'note', 'updatedAt'])
         && r.keys().hasAll(['appid', 'works', 'rating', 'updatedAt'])
-        && r.appid is int && r.appid > 0 && r.appid < 100000000
+        && r.appid is int && r.appid > 0 && r.appid < 20000000
         && r.works is bool
         && r.rating is int && r.rating >= 1 && r.rating <= 5
         && (!('chip' in r) || (r.chip is string && r.chip.size() <= 40))
@@ -22,13 +22,22 @@ service cloud.firestore {
         && r.updatedAt == request.time;
     }
 
+    // Only the anonymous sign-in the app uses: no other sign-in method is ever accepted here.
+    function anonymousPlayer() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function ownId(reportId) {
+      return reportId == string(request.resource.data.appid) + '_' + request.auth.uid;
+    }
+
     match /reports/{reportId} {
       allow read: if false;
-      allow create, update: if request.auth != null
-        && reportId == string(request.resource.data.appid) + '_' + request.auth.uid
-        && validReport(request.resource.data);
+      allow create: if anonymousPlayer() && ownId(reportId) && validReport(request.resource.data);
+      // Sending again replaces the report, but not faster than every 20 seconds: one account cannot hammer the quota.
+      allow update: if anonymousPlayer() && ownId(reportId) && validReport(request.resource.data)
+        && request.time > resource.data.updatedAt + duration.value(20, 's');
       // A player can take their own report back.
-      allow delete: if request.auth != null && reportId.matches('^[0-9]+_' + request.auth.uid + '$');
+      allow delete: if anonymousPlayer() && reportId.matches('^[0-9]+_' + request.auth.uid + '$');
     }
 
     match /{document=**} {

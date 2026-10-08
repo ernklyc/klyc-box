@@ -15,7 +15,7 @@ Done on 2026-10-06: project `klyc-box-reports` (own project, separate from ernkl
 1. Firestore Database > Create database > `(default)`, Standard edition, location `eur3` (Europe), **production mode**.
 2. Authentication > Get started > Sign-in method > **Anonymous** > Enable.
 3. `firebase deploy --only firestore:rules --project klyc-box-reports` (rules in `firestore.rules`).
-4. App Check is not on: with it off, anyone who reads the public web key can sign in anonymously and write validated reports at their own pace. Watch the usage dashboard; turn on App Check (DeviceCheck, needs the signed app) before a wide release.
+4. App Check is not on (it needs a notarized, signed app). Instead the rules accept only the anonymous sign-in, refuse an update sooner than 20 seconds after the last write, keep the appid in the real Steam range, and `aggregate.mjs` ignores any account with more than 40 reports and publishes a game only from 3 or more reports. Watch the usage dashboard in the Firebase console (Spark plan = no charges, a spike only pauses reports for the day).
 
 Until step 1 and 2 are done the app says "Player reports are not switched on yet" and sends nothing.
 

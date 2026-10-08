@@ -16,7 +16,8 @@ const { getFirestore } = await import("firebase-admin/firestore");
 
 initializeApp({ credential: applicationDefault() });
 const snapshot = await getFirestore().collection("reports").get();
-const reports = snapshot.docs.map((d) => d.data());
+// The document id is <appid>_<uid>: keep the uid so one account that floods the collection can be ignored.
+const reports = snapshot.docs.map((d) => ({ ...d.data(), uid: d.id.split("_").slice(1).join("_") }));
 const out = aggregate(reports);
 const file = process.argv[2] ?? "reports.json";
 fs.writeFileSync(file, JSON.stringify(out));
