@@ -5,6 +5,13 @@
     <link>https://github.com/ernklyc/klyc-box</link>
     <description>Windows games on Apple Silicon.</description>
     <item>
+      <title>KLYC-Box 1.0.2</title>
+      <description><![CDATA[Steam window no longer opens black on Wine 11 engines.]]></description>
+      <pubDate>Fri, 09 Oct 2026 00:48:06 +0300</pubDate>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/ernklyc/klyc-box/releases/download/v1.0.2/KLYC-Box-1.0.2.zip" sparkle:version="1.0.2" sparkle:shortVersionString="1.0.2" sparkle:edSignature="UnjVWyAgB9feYMly/7vHv8qoj113LO0hQQvHL644FXHvgCJ4yrajxAqCGoEJh0n6cClInqPkAK8NIL9wicewAQ==" length="6909190" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>KLYC-Box 1.0.1</title>
       <description><![CDATA[The Steam store follows the app's language.]]></description>
       <pubDate>Thu, 08 Oct 2026 03:49:06 +0300</pubDate>
