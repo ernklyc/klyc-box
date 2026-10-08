@@ -15,14 +15,14 @@ public struct SteamAchievements: Sendable, Equatable {
 
     /// Reads `appcache/stats/UserGameStatsSchema_<app>.bin` and `UserGameStats_<account>_<app>.bin`. Nil when the game never ran here
     /// or defines none.
-    public static func load(steamRoot: URL, account: Int, appid: Int, language: String = "turkish") -> SteamAchievements? {
+    public static func load(steamRoot: URL, account: Int, appid: Int, language: String = StoreLanguage.steam) -> SteamAchievements? {
         let stats = steamRoot.appending(path: "appcache/stats")
         guard let schemaData = try? Data(contentsOf: stats.appending(path: "UserGameStatsSchema_\(appid).bin")),
               let userData = try? Data(contentsOf: stats.appending(path: "UserGameStats_\(account)_\(appid).bin")) else { return nil }
         return parse(schema: BinaryVDF.parse(schemaData), user: BinaryVDF.parse(userData), appid: appid, language: language)
     }
 
-    public static func parse(schema: BinaryVDF, user: BinaryVDF, appid: Int, language: String = "turkish") -> SteamAchievements? {
+    public static func parse(schema: BinaryVDF, user: BinaryVDF, appid: Int, language: String = StoreLanguage.steam) -> SteamAchievements? {
         guard let statsNode = (schema[String(appid)] ?? schema)["stats"], let cache = user["cache"] else { return nil }
         func text(_ node: BinaryVDF?) -> String? { node?[language]?.stringValue ?? node?["english"]?.stringValue }
         var items: [Item] = []

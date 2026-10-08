@@ -82,7 +82,7 @@ public enum SteamWishlist {
         while start < appids.count {
             let chunk = appids[start..<min(start + 40, appids.count)].map(String.init).joined(separator: ",")
             start += 40
-            guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(chunk)&filters=price_overview&cc=tr&l=turkish") else { continue }
+            guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(chunk)&filters=price_overview&cc=tr&l=\(StoreLanguage.steam)") else { continue }
             var request = URLRequest(url: url); request.timeoutInterval = 15
             if let (data, _) = try? await session.data(for: request) { out.merge(parsePrices(data)) { a, _ in a } }
         }

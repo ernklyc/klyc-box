@@ -38,7 +38,7 @@ public enum StoreMoney {
     /// Minor units (cents) in the currency the store answered with. The Turkish store answers in US dollars, so that is what shows.
     public static func format(_ minor: Int, currency: String) -> String {
         if minor == 0 { return "Ücretsiz" }
-        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = currency.isEmpty ? "USD" : currency; f.locale = Locale(identifier: "tr_TR")
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = currency.isEmpty ? "USD" : currency; f.locale = StoreLanguage.locale
         return f.string(from: NSNumber(value: Double(minor) / 100)) ?? "\(Double(minor) / 100) \(currency)"
     }
 }
@@ -127,18 +127,18 @@ public enum SteamStore {
     }
 
     public static func featured(session: URLSession = .shared) async -> [StoreShelf] {
-        await get("https://store.steampowered.com/api/featuredcategories?cc=tr&l=turkish", session: session).map(parseFeatured) ?? []
+        await get("https://store.steampowered.com/api/featuredcategories?cc=tr&l=\(StoreLanguage.steam)", session: session).map(parseFeatured) ?? []
     }
 
     public static func search(_ term: String, session: URLSession = .shared) async -> [StoreCard] {
         guard let q = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), !term.isEmpty else { return [] }
-        return await get("https://store.steampowered.com/api/storesearch/?term=\(q)&cc=tr&l=turkish", session: session).map(parseSearch) ?? []
+        return await get("https://store.steampowered.com/api/storesearch/?term=\(q)&cc=tr&l=\(StoreLanguage.steam)", session: session).map(parseSearch) ?? []
     }
 
     /// The most helpful reviews and the overall verdict. Turkish first when there are any, else every language.
     public static func reviews(_ appid: Int, session: URLSession = .shared) async -> (ReviewSummary?, [StoreReview]) {
-        for language in ["turkish", "all"] {
-            guard let data = await get("https://store.steampowered.com/appreviews/\(appid)?json=1&language=\(language)&purchase_type=all&num_per_page=5&filter=all&l=turkish", session: session) else { continue }
+        for language in [StoreLanguage.steam, "all"] {
+            guard let data = await get("https://store.steampowered.com/appreviews/\(appid)?json=1&language=\(language)&purchase_type=all&num_per_page=5&filter=all&l=\(StoreLanguage.steam)", session: session) else { continue }
             let result = parseReviews(data)
             if !result.1.isEmpty || language == "all" { return result }
         }

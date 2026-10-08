@@ -77,7 +77,7 @@ struct SteamHub: View {
         default: return .library
         }
     }()
-    @State private var web = WebStoreController(home: URL(string: "https://store.steampowered.com/?l=turkish")!)
+    @State private var web = WebStoreController(home: URL(string: "https://store.steampowered.com/?l=\(StoreLanguage.steam)")!)
     /// Kept here, not in the store page: leaving the Store tab and coming back finds the front page as it was.
     @State private var storeModel = StoreFrontModel()
 

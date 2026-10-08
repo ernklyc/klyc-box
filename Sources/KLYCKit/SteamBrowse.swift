@@ -56,7 +56,7 @@ public extension SteamStore {
     }
 
     static func categories(session: URLSession = .shared) async -> [StoreCategory] {
-        guard let url = URL(string: "https://api.steampowered.com/IStoreService/GetTagList/v1/?language=turkish"),
+        guard let url = URL(string: "https://api.steampowered.com/IStoreService/GetTagList/v1/?language=\(StoreLanguage.steam)"),
               let (data, _) = try? await session.data(from: url) else { return [] }
         return parseCategories(data)
     }
@@ -102,7 +102,7 @@ public struct StoreFilters: Hashable, Sendable {
     public var isPlain: Bool { activeCount == 0 && term.trimmingCharacters(in: .whitespaces).isEmpty }
 
     func items(start: Int, count: Int) -> [URLQueryItem] {
-        var q: [(String, String)] = [("term", term), ("start", String(start)), ("count", String(count)), ("infinite", "1"), ("cc", "tr"), ("l", "turkish"),
+        var q: [(String, String)] = [("term", term), ("start", String(start)), ("count", String(count)), ("infinite", "1"), ("cc", "tr"), ("l", StoreLanguage.steam),
                                      ("category1", "998"), ("sort_by", sort.rawValue), ("ndl", "1")]
         if list != .none { q.append(("filter", list.rawValue)) }
         if !tags.isEmpty { q.append(("tags", tags.map(String.init).joined(separator: ","))) }
@@ -184,7 +184,7 @@ public extension SteamStore {
         var start = 0
         while start < appids.count {
             let chunk = Array(appids[start..<min(start + 100, appids.count)]); start += 100
-            let input: [String: Any] = ["ids": chunk.map { ["appid": $0] }, "context": ["language": "turkish", "country_code": "TR"],
+            let input: [String: Any] = ["ids": chunk.map { ["appid": $0] }, "context": ["language": StoreLanguage.steam, "country_code": "TR"],
                                         "data_request": ["include_basic_info": true, "include_assets": true, "include_reviews": true, "include_release": true, "include_tag_count": 8,
                                                          "include_all_purchase_options": true, "include_platforms": true]]
             guard let json = try? JSONSerialization.data(withJSONObject: input), var c = URLComponents(string: "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/") else { continue }

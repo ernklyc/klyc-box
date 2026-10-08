@@ -13,21 +13,11 @@ NOTARY_PROFILE="${NOTARY_PROFILE:-klycbox}"
 
 # A duplicate key in L10n's dictionary literal crashes the app at launch (2026-09-15); refuse to build one.
 python3 - <<'PY' || exit 1
-import re, collections
-keys = re.findall(r'^\s*"((?:[^"\\]|\\.)*)"\s*:\s*"', open("Sources/KLYCKit/L10n.swift").read(), re.M)
-dups = [k for k, c in collections.Counter(keys).items() if c > 1]
-if dups: print("error: duplicate L10n keys:", dups); raise SystemExit(1)
-# English is the source language and French is the one translation kept complete; a string
-# without a French line shows English on a French Mac (L() falls back), which is fine for a
-# contributor's change, so this warns rather than refusing (2026-09-17). Translations are
-# optional for contributors; the maintainer fills the French in before a release.
-import glob
-used = set()
-for f in glob.glob("Sources/KLYCBoxApp/*.swift") + glob.glob("Sources/KLYCKit/*.swift"):
-    if f.endswith("L10n.swift"): continue
-    used |= set(re.findall(r'\bL\("((?:[^"\\]|\\.)*)"\)', open(f).read()))
-missing = sorted(used - set(keys))
-if missing: print(f"warning: {len(missing)} L() strings without a French line (English shows instead):", missing)
+import re, collections, glob
+for f in sorted(glob.glob("Sources/KLYCKit/L10n*.swift")):
+    keys = re.findall(r'^\s*"((?:[^"\\]|\\.)*)"\s*:\s*"', open(f).read(), re.M)
+    dups = [k for k, c in collections.Counter(keys).items() if c > 1]
+    if dups: print(f"error: duplicate keys in {f}:", dups); raise SystemExit(1)
 PY
 # SwiftPM's Bundle.module accessor looks for the resource bundle next to the executable or at the
 # absolute build path of the machine that compiled it, never under Contents/Resources, so an app

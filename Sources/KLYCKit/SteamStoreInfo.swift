@@ -156,7 +156,7 @@ public enum SteamStoreInfo {
 
     public static func load(_ appid: Int, paths: KLYCPaths = KLYCPaths(), session: URLSession = .shared) async -> StoreInfo? {
         if let hit = cached(appid, paths: paths) { return hit }
-        guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(appid)&l=turkish&cc=tr") else { return nil }
+        guard let url = URL(string: "https://store.steampowered.com/api/appdetails?appids=\(appid)&l=\(StoreLanguage.steam)&cc=tr") else { return nil }
         var request = URLRequest(url: url); request.timeoutInterval = 12
         guard let (data, _) = try? await session.data(for: request), let info = parse(appid: appid, json: data) else { return nil }
         let file = cacheFile(appid, paths: paths)

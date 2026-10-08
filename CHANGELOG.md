@@ -2,6 +2,10 @@
 
 Sürüm numaraları [SemVer](https://semver.org) mantığıyla. Sürüm: `Scripts/release-klyc.sh`.
 
+## 1.0.1 (8 Ekim 2026)
+- **Steam mağazası uygulamanın diliyle konuşuyor:** oyun açıklamaları, yorumlar, etiketler, tarih ve fiyat biçimi artık Türkçe, English, 简体中文 ya da 日本語 (eskiden uygulama İngilizce olsa bile Türkçe geliyordu). Fiyat bölgesi Türkiye olarak kalır.
+- Highball'dan kalan kısmi Fransızca çeviri kaldırıldı; Fransızca ayarlı bir Mac artık İngilizce görür.
+
 ## 1.0.0 (8 Ekim 2026)
 
 İlk herkese açık sürüm. KLYC-Box, Gauthier Piarrette'in [Highball](https://github.com/gauthierpiarrette/highball) projesinin fork'u olarak başladı ve onun üzerine geliştirildi; atıflar ve değişiklik bildirimi [NOTICE.md](NOTICE.md) içinde.

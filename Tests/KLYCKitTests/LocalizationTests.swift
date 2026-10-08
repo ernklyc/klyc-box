@@ -7,6 +7,5 @@ final class LocalizationTests: XCTestCase {
     func testEveryTranslationTableLoads() {
         XCTAssertGreaterThan(L10n.tr.count, 100)
         XCTAssertGreaterThan(L10n.trKit.count, 100)
-        XCTAssertGreaterThan(L10n.fr.count, 10)
     }
 }
