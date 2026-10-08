@@ -16,6 +16,6 @@ python3 Scripts/check-l10n.py        # Turkish strings must be complete and not 
 Scripts/health-check.sh --quick
 ```
 
-Keep the UI text in English in code, wrapped in `L("...")`, and add the Turkish in `Sources/KLYCKit/L10nTR*.swift`. Small, focused pull requests are easier to review.
+Keep the UI text in English in code, wrapped in `L("...")`, and add the Turkish in `Sources/KLYCKit/L10nTR*.swift`. The app speaks four languages (Türkçe, English, 简体中文, 日本語): once a Turkish line exists, `AppLanguageTests` also wants the Chinese and Japanese lines in `L10nZH.swift` / `L10nJA.swift` with the same `%@`/`%d` placeholders. If you cannot translate, open the pull request with the English text only and say so; a maintainer will fill the rest. Small, focused pull requests are easier to review.
 
 Do not add analytics, tracking or anything that sends data without an explicit click.

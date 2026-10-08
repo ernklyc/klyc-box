@@ -18,6 +18,10 @@ What is not: Wine, DXMT, DXVK, MoltenVK and the games themselves (report those u
 - **`klycbox://` links** carry a per-install secret, so a web page cannot start a game or program on your Mac.
 - **Downloads are verified:** engine components and the Epic helper are pinned to SHA-256 digests kept in the app; updates are signed (Sparkle, EdDSA).
 
+## The report database
+
+Player reports go to a Firestore database that nobody, not even the sender, can read back. The rules accept only the anonymous sign-in the app uses, one report per player per game, no faster than every 20 seconds, with the fields and ranges checked; a script run with admin rights publishes totals only for games with at least three reports and ignores any account that floods it. The web key inside the app is restricted to the three Google APIs it needs. See `reports/README.md`.
+
 ## What the app sends
 
 Nothing by default. See https://klycbox.ernklyc.dev/privacy/ for the exact list.

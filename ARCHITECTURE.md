@@ -19,7 +19,11 @@ Saf ve test edilebilir parçalar. Yeni bir kural yazıyorsan önce burada, testi
 - `TuningStore` / `TuningResult`: "İyileştir" sonuçları (`tuning.json`).
 - `ModInstaller`, `ModDLLOverrides`, `WindowsPath`, `ModCatalog`: mod dosyalarını yedekli ekleme, geri alma, DLL ayarı.
 - `Verifier`: bir oyunu bir grafik modunda açıp çökme / siyah ekran kontrolü.
-- `L10n*`, `L(_:)`: çeviri (İngilizce anahtar, Türkçe ve Fransızca sözlük).
+- `L10n*`, `L(_:)`, `AppLanguage`: çeviri. İngilizce metin anahtardır; sözlükler `L10nTR.swift` + `L10nTRKit.swift` (Türkçe), `L10nZH.swift` (简体中文), `L10nJA.swift` (日本語). Dil Ayarlar › Genel › Dil'den seçilir (`appLanguage` anahtarı, "Otomatik" Mac'in dilini izler; dört dilin dışı İngilizce). Seçim açılışta bir kez okunur, değişiklik yeniden başlatmayla geçerli olur. `AppLanguageTests` her Türkçe anahtarın zh/ja karşılığı ve aynı yer tutucuları olmasını şart koşar; yinelenen anahtar uygulamayı çökertir (`Scripts/check-l10n.py`, `make-app.sh` bunu denetler).
+- `StoreLanguage`: Steam mağazası isteklerinin dili ve fiyat biçimi uygulamanın diline uyar (bölge Türkiye kalır; testlerde Türkçe sabit).
+- `AtlasFeed`, `AtlasEntry`, `AtlasSite`, `AtlasText`: oyun rehberi sitesinin (`klycbox.ernklyc.dev/data/atlas-feed.json`) küçük beslemesi; günde en fazla bir kez, ETag'li, önbellekli. Oyun sayfasında ve mağazada Atlas kartı, mağaza süzgeci (`StoreFilters.Compat`: denendi / oyuncu bildirdi / tahmin / çalışmaz, en çok 240 oyun) ve kart rozetleri buradan beslenir. Beslemede tarif, kurulum adresi ya da başlatma argümanı yoktur.
+- `CommunityReport`: isteğe bağlı anonim oyuncu raporu (Firebase REST: anonim giriş + `documents:commit`; SDK yok). Sunucu tarafı `reports/` altında: `firestore.rules` (yalnızca anonim giriş, 20 sn güncelleme bekleme süresi, Steam aralığında appid, kimse okuyamaz), `aggregate.mjs` (en az 3 rapor, 40'tan fazla rapor gönderen hesap yok sayılır). API anahtarı Google Cloud'da yalnızca Identity Toolkit, Cloud Firestore ve Token Service API'lerine kısıtlıdır. App Check imzalı (notarize) uygulama gerektirdiği için kapalı.
+- `CrashReport`: beklenmedik kapanıştan sonra yol içermeyen özetle hazır doldurulmuş GitHub raporu *önerir* (kendiliğinden hiçbir şey göndermez).
 
 ## KLYCBoxApp (görünüm)
 - **AppState** (`@Observable`): uygulamanın tek deposu (ortamlar, oyunlar, çalışan işler). Dosyalara bölünmüştür:
@@ -45,5 +49,9 @@ Saf ve test edilebilir parçalar. Yeni bir kural yazıyorsan önce burada, testi
 ## Yeni özellik eklerken
 1. Kuralı Kit'e yaz, `Tests/KLYCKitTests` altına test ekle.
 2. Gerekirse `AppState+Özellik.swift` ile uygulamaya bağla.
-3. Ekran durumu için ViewModel, çizim için görünüm. Metinler `L("English")` ile, Türkçesi `L10nTRKit.swift`'e.
+3. Ekran durumu için ViewModel, çizim için görünüm. Metinler `L("English")` ile; Türkçesi `L10nTRKit.swift`'e, Çince ve Japonca karşılığı `L10nZH.swift` / `L10nJA.swift`'e (test üçünü de ister).
+   Diskte dolaşan işi (klasör tarama gibi) asla görünümün `body`'sinde yapma: ana iş parçacığını dondurur (1.0.0 öncesi oyun sayfası böyle donuyordu); `.task` içinde arka plana al.
 4. `Scripts/health-check.sh` yeşil olmadan birleştirme.
+
+## Sürüm çıkarmak
+`KLYC_UNNOTARIZED=1 Scripts/release-klyc.sh X.Y.Z "özet" notlar.md` (main dalından, temiz ağaçla): testler → derleme → sıfırdan motor kurulum testi (`Scripts/firstrun-smoke.sh`, ~500 MB indirir) → DMG, zip, kaynak arşivi → imza → etiket ve GitHub sürümü → `appcast.xml` commit'i. Sonra `dist/KLYC-Box.app` kopyasını silin (makinede yalnızca `/Applications/KLYC-Box.app` kalsın).
