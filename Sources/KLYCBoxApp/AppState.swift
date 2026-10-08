@@ -2009,6 +2009,11 @@ final class AppState {
 
     func launch(pin: Pin, in bottle: Bottle) {
         guard let engine = engine(for: bottle) else { return }
+        // Steam's own window opens black on the Wine 11 (CrossOver) engine. Say so instead of starting a client nobody can use.
+        if isSteamUI(pin), WineRunner.steamShowsBlackWindow(engineID: engine.id), !WineRunner.steamIsRunning(inPrefix: bottle.url) {
+            fail(KLYCError.failed(L("Steam's window stays black on this environment's engine (Wine 11). Switch the environment to the Wine 10 engine on its page (Engine), then start Steam again. Games are not affected.")))
+            return
+        }
         // A pinned program's own mode behind an unaccepted licence gets the same ask as a game's
         // (#61); the runner degrades any other mode the engine lacks, with a note.
         if let wanted = pin.renderer ?? Optional(bottle.settings.renderer),

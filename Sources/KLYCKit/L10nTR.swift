@@ -6,6 +6,7 @@ extension L10n {
         "Frame generation (Lossless Scaling, beta)": "Kare üretimi (Lossless Scaling, beta)",
         "How frame generation works": "Kare üretimi nasıl çalışır",
         "Off": "Kapalı",
+        "Steam's window stays black on this environment's engine (Wine 11). Switch the environment to the Wine 10 engine on its page (Engine), then start Steam again. Games are not affected.": "Steam'in penceresi bu ortamın motorunda (Wine 11) siyah kalıyor. Ortamın sayfasından motoru Wine 10'a çevirin (Motor), sonra Steam'i yeniden başlatın. Oyunlar etkilenmez.",
         "Steam asks where to put it.": "Steam nereye kurulacağını sorar.",
         "Open in Steam for Mac": "Mac için Steam'de aç",
         "Native Mac build on Steam": "Steam'de yerel Mac sürümü",

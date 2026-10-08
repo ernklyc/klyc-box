@@ -321,7 +321,7 @@ public struct WineRunner: Sendable {
             renderer = nil
         }
         // cwd = the exe's folder, as a Windows shortcut would — games with relative asset paths need it.
-        let arguments = Self.steamBrowserArguments(executable: exe.path, engineID: engine.id, arguments: pin.arguments)
+        let arguments = pin.arguments
         return try await start(exe, arguments: arguments, renderer: renderer, extraEnvironment: env,
                                workingDirectory: exe.deletingLastPathComponent(), onOutput: onOutput)
     }
@@ -426,13 +426,11 @@ public struct WineRunner: Sendable {
     /// Whether a Steam client already runs in this bottle, by its command line.
     public func steamIsRunning() -> Bool { Self.steamIsRunning(inPrefix: bottle.url) }
 
-    /// On the Wine 11 (CrossOver) engines Steam's browser process (steamwebhelper.exe) crashes its GPU process over and over, so the whole Steam window
-    /// stays black (seen 2026-10-09 after a Steam client update: "GPU process has crashed 3 time(s)"). `-cef-disable-gpu` makes it draw in software
-    /// and the window comes up. Added for the Steam client only, and only when the person's own arguments do not already decide it.
-    public static func steamBrowserArguments(executable: String, engineID: String, arguments: [String]) -> [String] {
-        guard isSteamExecutable(executable), engineID.lowercased().contains("crossover"),
-              !arguments.contains(where: { $0.lowercased().hasPrefix("-cef-") || $0.lowercased().hasPrefix("steam://") }) else { return arguments }
-        return arguments + ["-cef-disable-gpu"]
+    /// The Steam client's window stays black on the Wine 11 (CrossOver 26.3) engine: its browser process (steamwebhelper.exe) crashes the GPU process over
+    /// and over, and software-rendering flags (`-cef-disable-gpu`, `-cef-disable-gpu-compositing`, `-no-cef-sandbox`) and every renderer leave it black.
+    /// Seen 2026-10-09: the same bottle on the Wine 10 (Sikarugir) engine opens Steam normally. Games are not affected, only Steam's own window.
+    public static func steamShowsBlackWindow(engineID: String) -> Bool {
+        engineID.lowercased().contains("crossover26.3")
     }
 
     /// Pure: does a command line's program name end in steam.exe (Windows or Unix separators).

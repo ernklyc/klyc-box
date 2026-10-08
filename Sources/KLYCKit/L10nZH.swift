@@ -7,6 +7,7 @@ extension L10n {
         "Frame generation (Lossless Scaling, beta)": "帧生成（Lossless Scaling，测试版）",
         "How frame generation works": "帧生成的工作原理",
         "Off": "关闭",
+        "Steam's window stays black on this environment's engine (Wine 11). Switch the environment to the Wine 10 engine on its page (Engine), then start Steam again. Games are not affected.": "在此环境的引擎（Wine 11）上，Steam 的窗口会一直是黑色的。请在该环境页面的“引擎”中改用 Wine 10 引擎，然后重新启动 Steam。游戏不受影响。",
         "Steam asks where to put it.": "Steam 会询问安装位置。",
         "Open in Steam for Mac": "在 Mac 版 Steam 中打开",
         "Native Mac build on Steam": "Steam 上的原生 Mac 版本",
