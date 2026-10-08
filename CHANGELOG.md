@@ -2,6 +2,9 @@
 
 Sürüm numaraları [SemVer](https://semver.org) mantığıyla. Sürüm: `Scripts/release-klyc.sh`.
 
+## 1.0.2 (9 Ekim 2026)
+- **Steam penceresi simsiyah açılıyordu: düzeltildi.** Wine 11 (CrossOver) motorlarında Steam'in tarayıcı katmanının GPU işlemi arka arkaya çöküyor ve pencere boş kalıyordu (bir Steam istemci güncellemesinden sonra ortaya çıktı). Steam artık bu motorlarda yazılım çizimiyle (`-cef-disable-gpu`) açılıyor; kendi tarayıcı bayraklarını yazdıysan onlara dokunulmaz.
+
 ## 1.0.1 (8 Ekim 2026)
 - **Steam mağazası uygulamanın diliyle konuşuyor:** oyun açıklamaları, yorumlar, etiketler, tarih ve fiyat biçimi artık Türkçe, English, 简体中文 ya da 日本語 (eskiden uygulama İngilizce olsa bile Türkçe geliyordu). Fiyat bölgesi Türkiye olarak kalır.
 - Highball'dan kalan kısmi Fransızca çeviri kaldırıldı; Fransızca ayarlı bir Mac artık İngilizce görür.
